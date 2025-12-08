@@ -4,7 +4,7 @@ from typing import Dict
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -53,9 +53,19 @@ class DashboardWindow(QMainWindow):
         v.setContentsMargins(12, 16, 12, 16)
         v.setSpacing(8)
 
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        title_icon_lbl = QLabel()
+        title_icon_lbl.setObjectName("navTitleIcon")
+        title_icon = self._load_pixmap("menu.png", QSize(18, 18))
+        if title_icon is not None:
+            title_icon_lbl.setPixmap(title_icon)
         title = QLabel("Controle")
         title.setObjectName("navTitle")
-        v.addWidget(title)
+        title_row.addWidget(title_icon_lbl)
+        title_row.addWidget(title, 1)
+        v.addLayout(title_row)
 
         self.btn_principal = QPushButton("Principal")
         self.btn_estoque = QPushButton("Estoque")
@@ -132,9 +142,19 @@ class DashboardWindow(QMainWindow):
         v.setContentsMargins(24, 24, 24, 24)
         v.setSpacing(16)
 
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+        header_icon_lbl = QLabel()
+        header_icon_lbl.setObjectName("pageTitleIcon")
+        header_icon = self._load_pixmap("dashboard.png", QSize(20, 20))
+        if header_icon is not None:
+            header_icon_lbl.setPixmap(header_icon)
         header = QLabel("Principal")
         header.setObjectName("pageTitle")
-        v.addWidget(header)
+        header_row.addWidget(header_icon_lbl)
+        header_row.addWidget(header, 1)
+        v.addLayout(header_row)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_home_page())
@@ -240,6 +260,10 @@ class DashboardWindow(QMainWindow):
             }
             #userName { font-size: 14px; font-weight: 700; color: #111827; }
             #userEmail { font-size: 12px; color: #4b5563; }
+            #navTitleIcon, #pageTitleIcon {
+                max-width: 20px;
+                max-height: 20px;
+            }
             """
         )
 
@@ -250,6 +274,17 @@ class DashboardWindow(QMainWindow):
         if not path.exists():
             return None
         return QIcon(str(path))
+
+    def _load_pixmap(self, name: str | None, size: QSize | None = None) -> QPixmap | None:
+        if not name:
+            return None
+        path = self._icon_dir / name
+        if not path.exists():
+            return None
+        pixmap = QPixmap(str(path))
+        if size is not None and not pixmap.isNull():
+            return pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        return pixmap if not pixmap.isNull() else None
 
 
 __all__ = ["DashboardWindow"]
