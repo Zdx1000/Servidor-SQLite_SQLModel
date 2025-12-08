@@ -223,6 +223,7 @@ class DashboardWindow(QMainWindow):
             QPushButton:hover { background: #eef2f6; }
             QPushButton:checked { background: #2563eb; border-color: #2563eb; color: #ffffff; }
             #secondaryButton { background: #f3f4f6; color: #1f2933; border-color: #cfd6dd; }
+            #secondaryButton:hover { background: #991b1b; color: #ffffff; border-color: #7f1d1d; }
             #pageTitle { font-size: 22px; font-weight: 700; color: #111827; }
             #infoCard {
                 border: 1px solid #d8dde3;
