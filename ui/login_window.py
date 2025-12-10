@@ -24,6 +24,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from sqlmodel import Session
+
+from db.config import engine
+from services.auth_service import AuthError, AuthService
+
 
 @dataclass(frozen=True)
 class FieldSpec:
@@ -69,6 +74,19 @@ class AuthForm(QWidget):
 
     def values(self) -> Dict[str, str]:
         return {key: widget.text().strip() for key, widget in self._inputs.items()}
+
+    def clear_fields(self) -> None:
+        for widget in self._inputs.values():
+            widget.clear()
+
+    def clear_errors(self) -> None:
+        for widget in self._inputs.values():
+            widget.setStyleSheet("")
+
+    def mark_error(self, key: str) -> None:
+        widget = self._inputs.get(key)
+        if widget:
+            widget.setStyleSheet("border: 1px solid #dc2626;")
 
 
 class ForgotPasswordDialog(QDialog):
@@ -239,21 +257,62 @@ class LoginWindow(QMainWindow):
     def _handle_submit(self, mode: str) -> None:
         form = self.login_form if mode == "login" else self.register_form
         data = form.values()
-        if mode == "login":
-            demo_user = {
-                "name": data.get("identifier", "Usuário"),
-                "email": data.get("identifier", "usuario@example.com"),
-                "role": "Administrador",
-                "last_login": "Hoje, 09:42",
-            }
-            self.login_success.emit(demo_user)
-        else:
-            pretty_data = "\n".join(f"- {key}: {value}" for key, value in data.items())
-            QMessageBox.information(
-                self,
-                "Registro (apenas visual)",
-                f"Cadastro mockado. Backend será conectado depois.\n\n{pretty_data}",
-            )
+
+        # reset highlights
+        self.login_form.clear_errors()
+        self.register_form.clear_errors()
+
+        try:
+            with Session(engine) as session:
+                auth = AuthService(session)
+
+                if mode == "login":
+                    user = auth.authenticate(data.get("identifier", ""), data.get("password", ""))
+                    if user:
+                        self.login_success.emit(
+                            {
+                                "name": user.name,
+                                "email": user.email,
+                                "role": "Administrador",  # Placeholder até termos perfis
+                                "last_login": user.created_at.strftime("%d/%m/%Y %H:%M"),
+                            }
+                        )
+                    else:
+                        self.login_form.mark_error("identifier")
+                        self.login_form.mark_error("password")
+                        QMessageBox.warning(self, "Falha no login", "Credenciais inválidas.")
+                else:
+                    password = data.get("password", "")
+                    confirm = data.get("confirm", "")
+                    missing = [key for key in ("name", "email", "password", "confirm") if not data.get(key)]
+                    for key in missing:
+                        self.register_form.mark_error(key)
+                    if missing:
+                        QMessageBox.warning(self, "Cadastro", "Preencha todos os campos obrigatórios.")
+                        return
+                    if password != confirm:
+                        self.register_form.mark_error("password")
+                        self.register_form.mark_error("confirm")
+                        QMessageBox.warning(self, "Senha", "As senhas não conferem.")
+                        return
+                    user = auth.register_user(
+                        name=data.get("name", ""),
+                        email=data.get("email", ""),
+                        password=password,
+                    )
+                    QMessageBox.information(
+                        self,
+                        "Cadastro concluído",
+                        f"Conta criada com sucesso para {user.name} ({user.email})."
+                        "\nAgora você já pode entrar.",
+                    )
+                    self.register_form.clear_fields()
+                    self._switch_form(0)
+                    self.login_form.clear_fields()
+        except AuthError as exc:
+            QMessageBox.warning(self, "Validação", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Erro", f"Ocorreu um erro: {exc}")
 
     def _handle_forgot_password(self) -> None:
         dialog = ForgotPasswordDialog(self)

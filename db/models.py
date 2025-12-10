@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlmodel import Field, SQLModel, UniqueConstraint
+
+
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("email"),
+        UniqueConstraint("name"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True, nullable=False, max_length=120)
+    email: str = Field(index=True, nullable=False, max_length=255)
+    hashed_password: str = Field(nullable=False, max_length=255)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

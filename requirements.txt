@@ -1,1 +1,7 @@
 PyQt6>=6.6
+SQLModel>=0.0.14
+fastapi>=0.115.0
+uvicorn>=0.30.0
+httpx>=0.27.0
+bcrypt>=4.0.1,<4.1
+passlib[bcrypt]>=1.7.4
