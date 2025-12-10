@@ -67,3 +67,14 @@ class AuthService:
         if verify_password(password, user.hashed_password):
             return user
         return None
+
+    def change_password(self, user: User, current_password: str, new_password: str) -> User:
+        if not verify_password(current_password, user.hashed_password):
+            raise AuthError("Senha atual incorreta.")
+        _validate_password_strength(new_password)
+        new_hash = hash_password(new_password)
+        user.hashed_password = new_hash
+        self.session.add(user)
+        self.session.commit()
+        self.session.refresh(user)
+        return user

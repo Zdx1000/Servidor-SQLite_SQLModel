@@ -11,12 +11,19 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from sqlmodel import Session
+
+from db.config import engine
+from services.auth_service import AuthService, AuthError
 
 
 class DashboardWindow(QMainWindow):
@@ -73,6 +80,7 @@ class DashboardWindow(QMainWindow):
         self.btn_senha = QPushButton("Senha 167")
         self.btn_sindicancia = QPushButton("Sindicância")
         self.btn_senha171 = QPushButton("Senha 171")
+        self.btn_config = QPushButton("Configurações")
 
         buttons = (
             self.btn_principal,
@@ -81,6 +89,7 @@ class DashboardWindow(QMainWindow):
             self.btn_senha,
             self.btn_sindicancia,
             self.btn_senha171,
+            self.btn_config,
         )
 
         icon_map = {
@@ -90,14 +99,15 @@ class DashboardWindow(QMainWindow):
             self.btn_senha: "lock-167.png",
             self.btn_sindicancia: "shield.png",
             self.btn_senha171: "lock-171.png",
+            self.btn_config: "settings.png",
         }
 
         for idx, btn in enumerate(buttons):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, i=idx: self._switch_page(i))
-            if idx != 0:
-                btn.setEnabled(idx == 0)  # Apenas "Principal" ativo por enquanto
+            if btn not in (self.btn_principal, self.btn_config):
+                btn.setEnabled(False)
             icon_name = icon_map.get(btn)
             icon = self._load_icon(icon_name) if icon_name else None
             if icon is not None:
@@ -163,6 +173,7 @@ class DashboardWindow(QMainWindow):
         self.stack.addWidget(self._build_placeholder_page("Senha 167 (em breve)"))
         self.stack.addWidget(self._build_placeholder_page("Sindicância (em breve)"))
         self.stack.addWidget(self._build_placeholder_page("Senha 171 (em breve)"))
+        self.stack.addWidget(self._build_settings_page())
 
         v.addWidget(self.stack, 1)
         return wrapper
@@ -209,6 +220,59 @@ class DashboardWindow(QMainWindow):
         layout.addWidget(label)
         return page
 
+    def _build_settings_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(14)
+
+        info_card = QFrame()
+        info_card.setObjectName("infoCard")
+        info_layout = QVBoxLayout(info_card)
+        info_layout.setContentsMargins(16, 16, 16, 16)
+        info_layout.setSpacing(6)
+        title = QLabel("Configurações do usuário")
+        title.setObjectName("cardTitle")
+        info_layout.addWidget(title)
+
+        details = QListWidget()
+        details.setObjectName("infoList")
+        details.addItem(f"Nome: {self.user_info.get('name', '-')}")
+        details.addItem(f"E-mail: {self.user_info.get('email', '-')}")
+        details.addItem("Alterar senha abaixo")
+        info_layout.addWidget(details)
+
+        pw_card = QFrame()
+        pw_card.setObjectName("infoCard")
+        pw_layout = QVBoxLayout(pw_card)
+        pw_layout.setContentsMargins(16, 16, 16, 16)
+        pw_layout.setSpacing(8)
+        pw_title = QLabel("Alterar senha")
+        pw_title.setObjectName("cardTitle")
+        pw_layout.addWidget(pw_title)
+
+        self.pw_current = QLineEdit()
+        self.pw_current.setPlaceholderText("Senha atual")
+        self.pw_current.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pw_new = QLineEdit()
+        self.pw_new.setPlaceholderText("Nova senha")
+        self.pw_new.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pw_confirm = QLineEdit()
+        self.pw_confirm.setPlaceholderText("Confirmar nova senha")
+        self.pw_confirm.setEchoMode(QLineEdit.EchoMode.Password)
+
+        for widget in (self.pw_current, self.pw_new, self.pw_confirm):
+            pw_layout.addWidget(widget)
+
+        self.change_pw_btn = QPushButton("Atualizar senha")
+        self.change_pw_btn.setObjectName("primaryButton")
+        self.change_pw_btn.clicked.connect(self._handle_change_password)
+        pw_layout.addWidget(self.change_pw_btn)
+
+        layout.addWidget(info_card)
+        layout.addWidget(pw_card)
+        layout.addStretch(1)
+        return page
+
     def _switch_page(self, index: int) -> None:
         self.btn_principal.setChecked(index == 0)
         self.btn_estoque.setChecked(index == 1)
@@ -216,7 +280,61 @@ class DashboardWindow(QMainWindow):
         self.btn_senha.setChecked(index == 3)
         self.btn_sindicancia.setChecked(index == 4)
         self.btn_senha171.setChecked(index == 5)
+        self.btn_config.setChecked(index == 6)
         self.stack.setCurrentIndex(index)
+
+    def _clear_pw_errors(self) -> None:
+        for widget in (self.pw_current, self.pw_new, self.pw_confirm):
+            widget.setStyleSheet("")
+
+    def _mark_pw_error(self, widget: QLineEdit) -> None:
+        widget.setStyleSheet("border: 1px solid #dc2626;")
+
+    def _handle_change_password(self) -> None:
+        self._clear_pw_errors()
+        current = self.pw_current.text()
+        new = self.pw_new.text()
+        confirm = self.pw_confirm.text()
+
+        missing = []
+        if not current:
+            missing.append(self.pw_current)
+        if not new:
+            missing.append(self.pw_new)
+        if not confirm:
+            missing.append(self.pw_confirm)
+        for widget in missing:
+            self._mark_pw_error(widget)
+        if missing:
+            QMessageBox.warning(self, "Senha", "Preencha todos os campos de senha.")
+            return
+
+        if new != confirm:
+            self._mark_pw_error(self.pw_new)
+            self._mark_pw_error(self.pw_confirm)
+            QMessageBox.warning(self, "Senha", "Nova senha e confirmação não conferem.")
+            return
+
+        identifier = self.user_info.get("email") or self.user_info.get("name") or ""
+        try:
+            with Session(engine) as session:
+                auth = AuthService(session)
+                user = auth.authenticate(identifier, current)
+                if not user:
+                    self._mark_pw_error(self.pw_current)
+                    QMessageBox.warning(self, "Senha", "Senha atual incorreta.")
+                    return
+                auth.change_password(user, current_password=current, new_password=new)
+                QMessageBox.information(self, "Senha", "Senha atualizada com sucesso.")
+                self.pw_current.clear()
+                self.pw_new.clear()
+                self.pw_confirm.clear()
+        except AuthError as exc:
+            self._mark_pw_error(self.pw_new)
+            self._mark_pw_error(self.pw_confirm)
+            QMessageBox.warning(self, "Validação", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Erro", f"Ocorreu um erro: {exc}")
 
     def _handle_logout(self) -> None:
         self.logout_requested.emit()
