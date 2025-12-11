@@ -24,6 +24,7 @@ from sqlmodel import Session
 
 from db.config import engine
 from services.auth_service import AuthService, AuthError
+from repositories import password_request_repository
 
 
 class DashboardWindow(QMainWindow):
@@ -77,6 +78,7 @@ class DashboardWindow(QMainWindow):
         self.btn_principal = QPushButton("Principal")
         self.btn_estoque = QPushButton("Estoque")
         self.btn_relatorios = QPushButton("Relatórios")
+        self.btn_solicitacoes = QPushButton("Solicitações")
         self.btn_senha = QPushButton("Senha 167")
         self.btn_sindicancia = QPushButton("Sindicância")
         self.btn_senha171 = QPushButton("Senha 171")
@@ -86,6 +88,7 @@ class DashboardWindow(QMainWindow):
             self.btn_principal,
             self.btn_estoque,
             self.btn_relatorios,
+            self.btn_solicitacoes,
             self.btn_senha,
             self.btn_sindicancia,
             self.btn_senha171,
@@ -96,6 +99,7 @@ class DashboardWindow(QMainWindow):
             self.btn_principal: "home.png",
             self.btn_estoque: "boxes.png",
             self.btn_relatorios: "report.png",
+            self.btn_solicitacoes: "inbox.png",
             self.btn_senha: "lock-167.png",
             self.btn_sindicancia: "shield.png",
             self.btn_senha171: "lock-171.png",
@@ -106,7 +110,7 @@ class DashboardWindow(QMainWindow):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, i=idx: self._switch_page(i))
-            if btn not in (self.btn_principal, self.btn_config):
+            if btn not in (self.btn_principal, self.btn_solicitacoes, self.btn_config):
                 btn.setEnabled(False)
             icon_name = icon_map.get(btn)
             icon = self._load_icon(icon_name) if icon_name else None
@@ -170,6 +174,7 @@ class DashboardWindow(QMainWindow):
         self.stack.addWidget(self._build_home_page())
         self.stack.addWidget(self._build_placeholder_page("Estoque em breve"))
         self.stack.addWidget(self._build_placeholder_page("Relatórios em breve"))
+        self.stack.addWidget(self._build_requests_page())
         self.stack.addWidget(self._build_placeholder_page("Senha 167 (em breve)"))
         self.stack.addWidget(self._build_placeholder_page("Sindicância (em breve)"))
         self.stack.addWidget(self._build_placeholder_page("Senha 171 (em breve)"))
@@ -218,6 +223,28 @@ class DashboardWindow(QMainWindow):
         label = QLabel(text)
         label.setObjectName("placeholder")
         layout.addWidget(label)
+        return page
+
+    def _build_requests_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(12)
+
+        header = QLabel("Solicitações de atualização de senha")
+        header.setObjectName("cardTitle")
+        layout.addWidget(header)
+
+        self.requests_list = QListWidget()
+        self.requests_list.setObjectName("infoList")
+        layout.addWidget(self.requests_list, 1)
+
+        refresh_btn = QPushButton("Atualizar lista")
+        refresh_btn.setObjectName("primaryButton")
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_btn.clicked.connect(self._load_requests)
+        layout.addWidget(refresh_btn)
+
+        self._load_requests()
         return page
 
     def _build_settings_page(self) -> QWidget:
@@ -277,10 +304,11 @@ class DashboardWindow(QMainWindow):
         self.btn_principal.setChecked(index == 0)
         self.btn_estoque.setChecked(index == 1)
         self.btn_relatorios.setChecked(index == 2)
-        self.btn_senha.setChecked(index == 3)
-        self.btn_sindicancia.setChecked(index == 4)
-        self.btn_senha171.setChecked(index == 5)
-        self.btn_config.setChecked(index == 6)
+        self.btn_solicitacoes.setChecked(index == 3)
+        self.btn_senha.setChecked(index == 4)
+        self.btn_sindicancia.setChecked(index == 5)
+        self.btn_senha171.setChecked(index == 6)
+        self.btn_config.setChecked(index == 7)
         self.stack.setCurrentIndex(index)
 
     def _clear_pw_errors(self) -> None:
@@ -339,6 +367,23 @@ class DashboardWindow(QMainWindow):
     def _handle_logout(self) -> None:
         self.logout_requested.emit()
 
+    def _load_requests(self) -> None:
+        if not hasattr(self, "requests_list"):
+            return
+        self.requests_list.clear()
+        try:
+            with Session(engine) as session:
+                requests = password_request_repository.list_pending(session)
+            if not requests:
+                self.requests_list.addItem("Nenhuma solicitação pendente.")
+                return
+            for req in requests:
+                self.requests_list.addItem(
+                    f"Usuário: {req.user_name} | E-mail: {req.email} | Status: {req.status} | Criado: {req.created_at:%d/%m/%Y %H:%M}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Solicitações", f"Erro ao carregar solicitações: {exc}")
+
     def _apply_style(self) -> None:
         self.setStyleSheet(
             """
@@ -360,6 +405,14 @@ class DashboardWindow(QMainWindow):
             }
             QPushButton:hover { background: #eef2f6; }
             QPushButton:checked { background: #2563eb; border-color: #2563eb; color: #ffffff; }
+            #primaryButton {
+                background: #2563eb;
+                border-color: #2563eb;
+                color: #ffffff;
+                font-weight: 600;
+                text-align: center;
+            }
+            #primaryButton:hover { background: #1e40af; }
             #secondaryButton { background: #f3f4f6; color: #1f2933; border-color: #cfd6dd; }
             #secondaryButton:hover { background: #991b1b; color: #ffffff; border-color: #7f1d1d; }
             #pageTitle { font-size: 22px; font-weight: 700; color: #111827; }

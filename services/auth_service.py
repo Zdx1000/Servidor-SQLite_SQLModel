@@ -8,6 +8,7 @@ from sqlmodel import Session
 
 from db.models import User
 from repositories import user_repository
+from repositories import password_request_repository
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -78,3 +79,19 @@ class AuthService:
         self.session.commit()
         self.session.refresh(user)
         return user
+
+    def request_password_update(self, user_name: str, email: str, new_password: str) -> None:
+        user_name = user_name.strip()
+        email = email.strip().lower()
+        if not user_name or not email or not new_password:
+            raise AuthError("Usuário, e-mail e nova senha são obrigatórios.")
+
+        _validate_password_strength(new_password)
+
+        hashed = hash_password(new_password)
+        password_request_repository.create_request(
+            self.session,
+            user_name=user_name,
+            email=email,
+            hashed_new_password=hashed,
+        )

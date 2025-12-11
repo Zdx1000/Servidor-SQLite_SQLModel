@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -94,38 +94,63 @@ class ForgotPasswordDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Recuperar acesso")
         self.setModal(True)
+        self.setMinimumWidth(420)
         self._build_ui()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(10)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(12)
 
-        info = QLabel("Informe o código recebido e defina a nova senha.")
+        title = QLabel("Recuperar acesso")
+        title.setObjectName("formTitle")
+        layout.addWidget(title)
+
+        info = QLabel("Solicite a atualização de senha para aprovação do administrador.")
+        info.setObjectName("dialogSubtitle")
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        self.code_input = QLineEdit()
-        self.code_input.setPlaceholderText("Código de verificação")
+        self.user_input = QLineEdit()
+        self.user_input.setPlaceholderText("Usuário")
+        self.user_input.setClearButtonEnabled(True)
+
+        self.email_input = QLineEdit()
+        self.email_input.setPlaceholderText("E-mail")
+        self.email_input.setClearButtonEnabled(True)
+
         self.new_pass_input = QLineEdit()
         self.new_pass_input.setPlaceholderText("Nova senha")
         self.new_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.new_pass_input.setClearButtonEnabled(True)
+
         self.confirm_pass_input = QLineEdit()
         self.confirm_pass_input.setPlaceholderText("Confirmar nova senha")
         self.confirm_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.confirm_pass_input.setClearButtonEnabled(True)
 
-        layout.addWidget(self.code_input)
-        layout.addWidget(self.new_pass_input)
-        layout.addWidget(self.confirm_pass_input)
+        for widget in (self.user_input, self.email_input, self.new_pass_input, self.confirm_pass_input):
+            layout.addWidget(widget)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if ok_button:
+            ok_button.setText("Solicitar atualizar senha")
+            ok_button.setObjectName("primaryButton")
+            ok_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        if cancel_button:
+            cancel_button.setText("Cancelar")
+            cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
     def values(self) -> Dict[str, str]:
         return {
-            "code": self.code_input.text().strip(),
+            "user": self.user_input.text().strip(),
+            "email": self.email_input.text().strip(),
             "new_password": self.new_pass_input.text(),
             "confirm_password": self.confirm_pass_input.text(),
         }
@@ -162,27 +187,90 @@ class LoginWindow(QMainWindow):
         panel.setObjectName("brandPanel")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(36, 36, 36, 36)
-        layout.setSpacing(12)
+        layout.setSpacing(16)
+
+        logo_widget = self._build_logo()
+        if logo_widget:
+            layout.addWidget(logo_widget, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        badge = QLabel("Martins • Operações Internas")
+        badge.setObjectName("brandBadge")
 
         title = QLabel("Controle de Estoque")
         title.setObjectName("brandTitle")
-        subtitle = QLabel("Acesso local e seguro para sua operação diária.")
+        subtitle = QLabel("Fluxo diário confiável para entradas, saídas e inventário da Martins.")
         subtitle.setWordWrap(True)
         subtitle.setObjectName("brandSubtitle")
 
+        layout.addWidget(badge)
         layout.addWidget(title)
         layout.addWidget(subtitle)
+
+        info_card = QFrame()
+        info_card.setObjectName("infoCard")
+        info_layout = QVBoxLayout(info_card)
+        info_layout.setContentsMargins(14, 12, 14, 12)
+        info_layout.setSpacing(6)
+        for text in (
+            "Servidor local FastAPI integrado ao estoque Martins.",
+            "Base SQLite + SQLModel; pronta para migração futura.",
+            "Acesso restrito à equipe Martins com autenticação local.",
+        ):
+            line = QLabel(f"• {text}")
+            line.setWordWrap(True)
+            line.setObjectName("infoLine")
+            info_layout.addWidget(line)
+        layout.addWidget(info_card)
+
+        stats = QHBoxLayout()
+        stats.setSpacing(10)
+        stat_items = [
+            ("0", "Movimentos hoje"),
+            ("0", "Usuários ativos"),
+            ("0", "Filiais conectadas"),
+        ]
+        for value, label in stat_items:
+            card = QFrame()
+            card.setObjectName("statCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 10, 12, 10)
+            card_layout.setSpacing(2)
+
+            value_label = QLabel(value)
+            value_label.setObjectName("statValue")
+            label_label = QLabel(label)
+            label_label.setObjectName("statLabel")
+
+            card_layout.addWidget(value_label)
+            card_layout.addWidget(label_label)
+            stats.addWidget(card)
+        layout.addLayout(stats)
+
         layout.addStretch(1)
 
-        footer = QLabel("Backend FastAPI + SQLite/SQLModel. Interface PyQt6.")
+        footer = QLabel("Backend FastAPI + SQLite/SQLModel • Interface PyQt6")
         footer.setObjectName("brandFooter")
         layout.addWidget(footer)
 
-        creator = QLabel("Criado por: Equipe Controle 2026")
-        creator.setObjectName("brandCreator")
-        layout.addWidget(creator)
+        contact = QLabel("Martins • suporte interno")
+        contact.setObjectName("brandContact")
+        layout.addWidget(contact)
 
         return panel
+
+    def _build_logo(self) -> QLabel | None:
+        logo_path = self._icon_dir / "martins.png"
+        if not logo_path.exists():
+            return None
+        pixmap = QPixmap(str(logo_path))
+        if pixmap.isNull():
+            return None
+        label = QLabel()
+        label.setObjectName("brandLogo")
+        label.setPixmap(
+            pixmap.scaled(176, 176, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        )
+        return label
 
     def _build_auth_panel(self) -> QWidget:
         panel = QFrame()
@@ -318,14 +406,30 @@ class LoginWindow(QMainWindow):
         dialog = ForgotPasswordDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.values()
-            QMessageBox.information(
-                self,
-                "Recuperação (mock)",
-                "Código e nova senha capturados. Backend de recuperação será conectado depois.\n"
-                f"- Código: {data.get('code') or '[vazio]'}\n"
-                f"- Nova senha: {'*' * len(data.get('new_password', ''))}\n"
-                f"- Confirmar: {'*' * len(data.get('confirm_password', ''))}",
-            )
+            if data.get("new_password") != data.get("confirm_password"):
+                QMessageBox.warning(self, "Solicitação", "Nova senha e confirmação não conferem.")
+                return
+            missing = [key for key in ("user", "email", "new_password", "confirm_password") if not data.get(key)]
+            if missing:
+                QMessageBox.warning(self, "Solicitação", "Preencha usuário, e-mail e as duas senhas.")
+                return
+            try:
+                with Session(engine) as session:
+                    auth = AuthService(session)
+                    auth.request_password_update(
+                        user_name=data.get("user", ""),
+                        email=data.get("email", ""),
+                        new_password=data.get("new_password", ""),
+                    )
+                QMessageBox.information(
+                    self,
+                    "Solicitação registrada",
+                    "Pedido de atualização de senha enviado para aprovação do administrador.",
+                )
+            except AuthError as exc:
+                QMessageBox.warning(self, "Solicitação", str(exc))
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.critical(self, "Erro", f"Ocorreu um erro: {exc}")
 
     def _apply_style(self) -> None:
         self.setStyleSheet(
@@ -335,13 +439,54 @@ class LoginWindow(QMainWindow):
                 color: #1f2933;
             }
             QWidget { color: #1f2933; }
-            #brandPanel { background: #ffffff; color: #1f2933; border-right: 1px solid #d8dde3; }
+            #brandPanel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0f172a, stop:1 #1d4ed8);
+                color: #e5e7eb;
+                border-right: none;
+            }
+            #brandPanel QLabel { color: #e5e7eb; }
             #authPanel { background: #f9fafb; color: #1f2933; border-left: 1px solid #d8dde3; }
-            #brandTitle { font-size: 26px; font-weight: 700; color: #111827; }
-            #brandSubtitle { font-size: 14px; color: #4b5563; }
-            #brandFooter { font-size: 12px; color: #6b7280; }
-            #brandCreator { font-size: 12px; color: #9aa4b5; }
+            #brandBadge {
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: #cbd5e1;
+            }
+            #brandTitle { font-size: 26px; font-weight: 700; color: #ffffff; }
+            #brandSubtitle { font-size: 14px; color: #e0e7ff; }
+            #brandFooter { font-size: 12px; color: #cbd5e1; }
+            #brandContact { font-size: 12px; color: #bfdbfe; }
+            #brandLogo { margin-bottom: 6px; }
             QLabel { font-size: 13px; color: #1f2933; }
+            #infoCard {
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+            }
+            #infoLine { font-size: 12px; color: #e5e7eb; }
+            #statCard {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 12px;
+            }
+            #statValue { font-size: 18px; font-weight: 700; color: #ffffff; }
+            #statLabel { font-size: 11px; color: #cbd5e1; }
+            QDialog {
+                background: #f5f6f7;
+            }
+            #dialogSubtitle {
+                font-size: 13px;
+                color: #4b5563;
+            }
+            QDialogButtonBox QPushButton {
+                padding: 10px 14px;
+                border-radius: 10px;
+                border: 1px solid #cfd6dd;
+                background: #ffffff;
+                color: #111827;
+                min-width: 110px;
+            }
+            QDialogButtonBox QPushButton:hover { background: #eef2f6; }
             QLineEdit {
                 padding: 12px;
                 border: 1px solid #cfd6dd;
