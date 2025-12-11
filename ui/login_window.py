@@ -279,20 +279,24 @@ class LoginWindow(QMainWindow):
         layout.setContentsMargins(36, 36, 36, 36)
         layout.setSpacing(16)
 
-        button_row = QHBoxLayout()
+        toggle_frame = QFrame()
+        toggle_frame.setObjectName("toggleFrame")
+        button_row = QHBoxLayout(toggle_frame)
+        button_row.setContentsMargins(6, 6, 6, 6)
         button_row.setSpacing(8)
         self.login_button = QPushButton("Entrar")
-        self.register_button = QPushButton("Registrar")
+        self.register_button = QPushButton("Solicitar registro")
         for button in (self.login_button, self.register_button):
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setObjectName("modeButton")
             button_row.addWidget(button)
 
         self.login_button.setChecked(True)
         self.login_button.clicked.connect(lambda: self._switch_form(0))
         self.register_button.clicked.connect(lambda: self._switch_form(1))
 
-        layout.addLayout(button_row)
+        layout.addWidget(toggle_frame)
 
         self.login_form = AuthForm(
             title="Acessar conta",
@@ -304,14 +308,14 @@ class LoginWindow(QMainWindow):
         )
 
         self.register_form = AuthForm(
-            title="Criar conta",
+            title="Solicitar registro",
             fields=[
                 FieldSpec("name", "Nome"),
                 FieldSpec("email", "E-mail"),
                 FieldSpec("password", "Senha", is_password=True),
                 FieldSpec("confirm", "Confirmar senha", is_password=True),
             ],
-            submit_label="Registrar",
+            submit_label="Solicitar registro",
         )
 
         for form in (self.login_form, self.register_form):
@@ -383,16 +387,16 @@ class LoginWindow(QMainWindow):
                         self.register_form.mark_error("confirm")
                         QMessageBox.warning(self, "Senha", "As senhas não conferem.")
                         return
-                    user = auth.register_user(
+                    auth.request_registration(
                         name=data.get("name", ""),
                         email=data.get("email", ""),
                         password=password,
                     )
                     QMessageBox.information(
                         self,
-                        "Cadastro concluído",
-                        f"Conta criada com sucesso para {user.name} ({user.email})."
-                        "\nAgora você já pode entrar.",
+                        "Solicitação enviada",
+                        "Pedido de registro enviado para aprovação do administrador."
+                        "\nVocê receberá acesso assim que for aprovado.",
                     )
                     self.register_form.clear_fields()
                     self._switch_form(0)
@@ -497,6 +501,11 @@ class LoginWindow(QMainWindow):
             }
             QLineEdit::placeholder { color: #9aa4b5; }
             QLineEdit:focus { border-color: #2563eb; }
+            #toggleFrame {
+                background: #e5e7eb;
+                border: 1px solid #d1d5db;
+                border-radius: 14px;
+            }
             QPushButton {
                 padding: 12px;
                 border-radius: 10px;
@@ -506,8 +515,32 @@ class LoginWindow(QMainWindow):
             }
             QPushButton:hover { background: #eef2f6; }
             QPushButton:checked { background: #2563eb; border-color: #2563eb; color: #ffffff; }
-            #primaryButton { background: #2563eb; border-color: #2563eb; color: #ffffff; font-weight: 600; }
-            #primaryButton:hover { background: #3b82f6; }
+            QPushButton:pressed { background: #e2e8f0; }
+            #modeButton {
+                background: transparent;
+                border: none;
+                color: #4b5563;
+                font-weight: 600;
+                padding: 12px 18px;
+                border-radius: 12px;
+                min-width: 120px;
+            }
+            #modeButton:hover { background: rgba(255, 255, 255, 0.9); color: #111827; }
+            #modeButton:checked {
+                background: #ffffff;
+                color: #111827;
+                border: 1px solid #2563eb;
+            }
+            #modeButton:pressed { background: #e2e8f0; }
+            #primaryButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2563eb, stop:1 #1d4ed8);
+                border-color: #1d4ed8;
+                color: #ffffff;
+                font-weight: 700;
+                letter-spacing: 0.01em;
+            }
+            #primaryButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #3b82f6, stop:1 #2563eb); }
+            #primaryButton:pressed { background: #1d4ed8; }
             #formTitle { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #111827; }
             #authPanel QPushButton { min-height: 42px; }
             #authPanel QLabel { font-weight: 500; }
