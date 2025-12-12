@@ -869,53 +869,73 @@ class DashboardWindow(QMainWindow):
     def _apply_style(self) -> None:
         self.setStyleSheet(
             """
-            QMainWindow { background: #f5f6f7; color: #1f2933; }
+            QMainWindow { background: #f5f6f7; color: #0f172a; }
             #navPanel {
-                background: #ffffff;
-                border-right: 1px solid #d8dde3;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0f172a, stop:1 #1d4ed8);
+                border-right: 1px solid #1e3a8a;
+                color: #e5e7eb;
             }
             #contentPanel { background: #f9fafb; }
-            #navTitle { font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 8px; }
+            #navTitle { font-size: 16px; font-weight: 700; color: #e5e7eb; margin-bottom: 8px; }
             QPushButton {
-                padding: 10px;
-                border-radius: 8px;
+                padding: 11px 12px;
+                border-radius: 10px;
                 border: 1px solid #cfd6dd;
                 background: #ffffff;
-                color: #111827;
+                color: #0f172a;
                 text-align: left;
-                padding-left: 12px;
             }
             QPushButton:hover { background: #eef2f6; }
-            QPushButton:checked { background: #2563eb; border-color: #2563eb; color: #ffffff; }
-            #primaryButton {
-                background: #2563eb;
-                border-color: #2563eb;
+            QPushButton:checked {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2563eb, stop:1 #1d4ed8);
+                border-color: #1d4ed8;
                 color: #ffffff;
-                font-weight: 600;
+            }
+            #primaryButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2563eb, stop:1 #1d4ed8);
+                border-color: #1d4ed8;
+                color: #ffffff;
+                font-weight: 700;
+                letter-spacing: 0.01em;
                 text-align: center;
             }
-            #primaryButton:hover { background: #1e40af; }
-            #secondaryButton { background: #f3f4f6; color: #1f2933; border-color: #cfd6dd; }
-            #secondaryButton:hover { background: #991b1b; color: #ffffff; border-color: #7f1d1d; }
-                #deleteIconButton {
-                    background: #fee2e2;
-                    border: 1px solid #fecaca;
-                    border-radius: 8px;
-                    padding: 6px;
-                }
-                #deleteIconButton:hover {
-                    background: #fecdd3;
-                    border-color: #fca5a5;
-                }
-                #deleteIconButton:pressed {
-                    background: #fca5a5;
-                    border-color: #f87171;
-                }
+            #primaryButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #3b82f6, stop:1 #2563eb); }
+            #primaryButton:pressed { background: #1d4ed8; }
+            #secondaryButton {
+                background: #f1f5f9;
+                color: #0f172a;
+                border-color: #cfd6dd;
+                font-weight: 600;
+            }
+            #secondaryButton:hover {
+                background: #fee2e2;
+                border-color: #fca5a5;
+                color: #991b1b;
+            }
+            #secondaryButton:pressed {
+                background: #ef4444;
+                border-color: #dc2626;
+                color: #ffffff;
+            }
+            #deleteIconButton {
+                background: rgba(248, 113, 113, 0.14);
+                border: 1px solid rgba(248, 113, 113, 0.6);
+                border-radius: 10px;
+                padding: 6px;
+            }
+            #deleteIconButton:hover {
+                background: rgba(248, 113, 113, 0.2);
+                border-color: #f87171;
+            }
+            #deleteIconButton:pressed {
+                background: #f87171;
+                border-color: #ef4444;
+            }
             #acceptButton {
                 background: #16a34a;
                 border-color: #16a34a;
                 color: #ffffff;
-                font-weight: 600;
+                font-weight: 700;
                 text-align: center;
             }
             #acceptButton:hover { background: #15803d; }
@@ -923,31 +943,31 @@ class DashboardWindow(QMainWindow):
                 background: #dc2626;
                 border-color: #dc2626;
                 color: #ffffff;
-                font-weight: 600;
+                font-weight: 700;
                 text-align: center;
             }
             #rejectButton:hover { background: #b91c1c; }
-            #pageTitle { font-size: 22px; font-weight: 700; color: #111827; }
+            #pageTitle { font-size: 22px; font-weight: 800; color: #0f172a; }
             #infoCard {
                 border: 1px solid #d8dde3;
-                border-radius: 12px;
+                border-radius: 14px;
                 background: #ffffff;
             }
-            #cardTitle { font-size: 14px; font-weight: 700; color: #1f2933; }
+            #cardTitle { font-size: 15px; font-weight: 700; color: #0f172a; }
             #mutedText { color: #6b7280; font-size: 12px; }
-            #infoList { background: transparent; border: none; color: #1f2933; }
+            #infoList { background: transparent; border: none; color: #0f172a; }
             #requestList { background: transparent; border: none; }
             #requestCard {
                 border: 1px solid #d8dde3;
-                border-radius: 12px;
+                border-radius: 14px;
                 background: #ffffff;
             }
-            #requestTitle { font-size: 14px; font-weight: 700; color: #111827; }
+            #requestTitle { font-size: 14px; font-weight: 700; color: #0f172a; }
             #requestMeta { color: #6b7280; font-size: 12px; }
             #requestStatus { color: #374151; font-size: 12px; }
             #popCard {
                 border: 1px solid #d8dde3;
-                border-radius: 12px;
+                border-radius: 14px;
                 background: #ffffff;
             }
             #popIcon {
@@ -956,12 +976,13 @@ class DashboardWindow(QMainWindow):
             }
             #placeholder { color: #6b7280; font-size: 14px; }
             #userBox {
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                background: #f9fafb;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 0.06);
+                color: #e5e7eb;
             }
-            #userName { font-size: 14px; font-weight: 700; color: #111827; }
-            #userEmail { font-size: 12px; color: #4b5563; }
+            #userName { font-size: 14px; font-weight: 700; color: #e5e7eb; }
+            #userEmail { font-size: 12px; color: #cbd5e1; }
             #navTitleIcon, #pageTitleIcon {
                 max-width: 20px;
                 max-height: 20px;
