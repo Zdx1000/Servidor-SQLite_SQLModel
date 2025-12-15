@@ -75,8 +75,10 @@ class DashboardWindow(QMainWindow):
         v.setContentsMargins(12, 16, 12, 16)
         v.setSpacing(8)
 
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_box = QFrame()
+        title_box.setObjectName("navTitleBox")
+        title_row = QHBoxLayout(title_box)
+        title_row.setContentsMargins(12, 10, 12, 10)
         title_row.setSpacing(8)
         title_icon_lbl = QLabel()
         title_icon_lbl.setObjectName("navTitleIcon")
@@ -87,7 +89,11 @@ class DashboardWindow(QMainWindow):
         title.setObjectName("navTitle")
         title_row.addWidget(title_icon_lbl)
         title_row.addWidget(title, 1)
-        v.addLayout(title_row)
+
+        title_tag = QLabel("Menu")
+        title_tag.setObjectName("navTitleTag")
+        title_row.addWidget(title_tag, 0, Qt.AlignmentFlag.AlignRight)
+        v.addWidget(title_box)
 
         self.btn_principal = QPushButton("Principal")
         self.btn_estoque = QPushButton("POPs CD Estoque")
@@ -875,8 +881,22 @@ class DashboardWindow(QMainWindow):
                 border-right: 1px solid #1e3a8a;
                 color: #e5e7eb;
             }
+            #navTitleBox {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 14px;
+            }
             #contentPanel { background: #f9fafb; }
-            #navTitle { font-size: 16px; font-weight: 700; color: #e5e7eb; margin-bottom: 8px; }
+            #navTitle { font-size: 18px; font-weight: 800; color: #f8fafc; }
+            #navTitleTag {
+                padding: 4px 10px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.24);
+                background: rgba(255, 255, 255, 0.12);
+                color: #e0f2fe;
+                font-size: 11px;
+                font-weight: 700;
+            }
             QPushButton {
                 padding: 11px 12px;
                 border-radius: 10px;
