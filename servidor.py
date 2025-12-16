@@ -5,12 +5,14 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from db.config import init_db
+from db.report_config import init_report_db
 from ui.dashboard_window import DashboardWindow
 from ui.login_window import LoginWindow
 
 
 def main() -> None:
 	init_db()
+	init_report_db()
 	app = QApplication(sys.argv)
 	login_window = LoginWindow()
 

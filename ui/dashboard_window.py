@@ -5,6 +5,8 @@ from datetime import datetime
 import shutil
 from zoneinfo import ZoneInfo
 from pathlib import Path
+import platform
+import getpass
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QUrl
 from PyQt6.QtGui import QIcon, QPixmap, QDesktopServices
@@ -35,8 +37,16 @@ from PyQt6.QtWidgets import (
 from sqlmodel import Session
 
 from db.config import engine
+from db.report_config import report_engine
 from services.auth_service import AuthService, AuthError
-from repositories import password_request_repository, registration_request_repository, user_repository, pop_request_repository
+from services.report_service import ReportService
+from repositories import (
+    password_request_repository,
+    registration_request_repository,
+    user_repository,
+    pop_request_repository,
+    report_request_repository,
+)
 
 
 class DashboardWindow(QMainWindow):
@@ -85,7 +95,7 @@ class DashboardWindow(QMainWindow):
         title_icon = self._load_pixmap("menu.png", QSize(18, 18))
         if title_icon is not None:
             title_icon_lbl.setPixmap(title_icon)
-        title = QLabel("Controle")
+        title = QLabel("Painel")
         title.setObjectName("navTitle")
         title_row.addWidget(title_icon_lbl)
         title_row.addWidget(title, 1)
@@ -130,7 +140,7 @@ class DashboardWindow(QMainWindow):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, i=idx: self._switch_page(i))
-            if btn not in (self.btn_principal, self.btn_estoque, self.btn_solicitacoes, self.btn_config):
+            if btn not in (self.btn_principal, self.btn_estoque, self.btn_relatorios, self.btn_solicitacoes, self.btn_config):
                 btn.setEnabled(False)
             icon_name = icon_map.get(btn)
             icon = self._load_icon(icon_name) if icon_name else None
@@ -193,7 +203,7 @@ class DashboardWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_home_page())
         self.stack.addWidget(self._build_pops_page())
-        self.stack.addWidget(self._build_placeholder_page("Relatórios em breve"))
+        self.stack.addWidget(self._build_reports_page())
         self.stack.addWidget(self._build_requests_page())
         self.stack.addWidget(self._build_placeholder_page("Senha 167 (em breve)"))
         self.stack.addWidget(self._build_placeholder_page("Sindicância (em breve)"))
@@ -220,11 +230,23 @@ class DashboardWindow(QMainWindow):
 
         info_list = QListWidget()
         info_list.setObjectName("infoList")
+        os_name = platform.system() or "-"
+        os_release = platform.release() or "-"
+        host = platform.node() or "-"
+        os_user = self.user_info.get("os_user") or getpass.getuser() or "-"
+        avg_daily_usage = self.user_info.get("avg_daily_usage", "-")
+        if isinstance(avg_daily_usage, (int, float)):
+            avg_daily_usage = f"{avg_daily_usage:.1f} h/dia"
         info_pairs = [
             ("Nome", self.user_info.get("name", "-")),
             ("E-mail", self.user_info.get("email", "-")),
             ("Perfil", self.user_info.get("role", "-")),
             ("Último acesso", self.user_info.get("last_login", "-")),
+            ("Sistema", os_name),
+            ("Versão do SO", os_release),
+            ("Dispositivo", host),
+            ("Usuário do SO", os_user),
+            ("Tempo médio/dia", avg_daily_usage),
         ]
         for label, value in info_pairs:
             item = QListWidgetItem(f"{label}: {value}")
@@ -233,6 +255,38 @@ class DashboardWindow(QMainWindow):
         card_layout.addWidget(info_list)
 
         layout.addWidget(user_card)
+
+        activity_card = QFrame()
+        activity_card.setObjectName("infoCard")
+        activity_layout = QVBoxLayout(activity_card)
+        activity_layout.setContentsMargins(16, 16, 16, 16)
+        activity_layout.setSpacing(6)
+
+        activity_title = QLabel("Atividade recente")
+        activity_title.setObjectName("cardTitle")
+        activity_layout.addWidget(activity_title)
+
+        activity_list = QListWidget()
+        activity_list.setObjectName("infoList")
+
+        last_action = self.user_info.get("last_action", "-")
+        last_action_at = self.user_info.get("last_action_at", "-")
+        if isinstance(last_action_at, datetime):
+            last_action_at = self._format_br_datetime(last_action_at)
+        last_ip = self.user_info.get("last_ip", "-")
+        last_device = self.user_info.get("last_device", "-")
+
+        activity_items = [
+            ("Última movimentação", last_action),
+            ("Quando", last_action_at),
+            ("Origem/IP", last_ip),
+            ("Dispositivo", last_device),
+        ]
+        for label, value in activity_items:
+            activity_list.addItem(f"{label}: {value}")
+
+        activity_layout.addWidget(activity_list)
+        layout.addWidget(activity_card)
         layout.addStretch(1)
         return page
 
@@ -270,6 +324,44 @@ class DashboardWindow(QMainWindow):
         layout.addLayout(self.pop_grid)
 
         self._render_pop_cards()
+
+        layout.addStretch(1)
+        return page
+
+    def _build_reports_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(12)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+
+        header = QLabel("Relatórios")
+        header.setObjectName("pageTitle")
+        header_row.addWidget(header, 1)
+
+        request_btn = QPushButton("Solicitar relatório")
+        request_btn.setObjectName("primaryButton")
+        request_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        report_icon = self._load_icon("report.png")
+        if report_icon is not None:
+            request_btn.setIcon(report_icon)
+            request_btn.setIconSize(QSize(18, 18))
+        request_btn.clicked.connect(self._open_report_request_dialog)
+        header_row.addWidget(request_btn, 0, Qt.AlignmentFlag.AlignRight)
+
+        layout.addLayout(header_row)
+
+        subtitle = QLabel("Planilhas, dashboards e documentos de acompanhamento.")
+        subtitle.setObjectName("mutedText")
+        layout.addWidget(subtitle)
+
+        self.report_grid = QGridLayout()
+        self.report_grid.setSpacing(12)
+        layout.addLayout(self.report_grid)
+
+        self._render_report_cards()
 
         layout.addStretch(1)
         return page
@@ -517,6 +609,246 @@ class DashboardWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "POP", f"Erro ao excluir POP: {exc}")
 
+    def _render_report_cards(self) -> None:
+        if not hasattr(self, "report_grid"):
+            return
+        grid = self.report_grid
+        while grid.count():
+            item = grid.takeAt(grid.count() - 1)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        reports = []
+        try:
+            with Session(report_engine) as report_session:
+                approved = report_request_repository.list_approved(report_session)
+                reports.extend(
+                    {
+                        "title": req.title,
+                        "desc": req.description,
+                        "file_path": req.file_path,
+                        "file_name": req.file_name,
+                        "id": req.id,
+                    }
+                    for req in approved
+                )
+        except Exception:
+            pass
+
+        for idx, rep in enumerate(reports):
+            row, col = divmod(idx, 2)
+            card = QFrame()
+            card.setObjectName("popCard")
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(10)
+
+            icon_lbl = QLabel()
+            icon_lbl.setObjectName("popIcon")
+            icon_pm = self._load_pixmap("report.png", QSize(32, 32))
+            if icon_pm is not None:
+                icon_lbl.setPixmap(icon_pm)
+            card_layout.addWidget(icon_lbl)
+
+            text_col = QVBoxLayout()
+            text_col.setSpacing(4)
+
+            title_row = QHBoxLayout()
+            title_row.setSpacing(6)
+
+            title_lbl = QLabel(rep["title"])
+            title_lbl.setObjectName("cardTitle")
+            title_row.addWidget(title_lbl)
+            title_row.addStretch(1)
+
+            if rep.get("id") is not None:
+                delete_btn = QPushButton()
+                delete_btn.setFixedSize(32, 32)
+                delete_btn.setObjectName("deleteIconButton")
+                delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                delete_btn.setToolTip("Excluir relatório")
+                del_icon = self._load_icon("excluir.png")
+                if del_icon is not None:
+                    delete_btn.setIcon(del_icon)
+                    delete_btn.setIconSize(QSize(16, 16))
+                delete_btn.clicked.connect(lambda _, rid=rep["id"]: self._handle_delete_report(rid))
+                title_row.addWidget(delete_btn)
+
+            text_col.addLayout(title_row)
+
+            desc_lbl = QLabel(rep["desc"])
+            desc_lbl.setWordWrap(True)
+            desc_lbl.setObjectName("mutedText")
+            text_col.addWidget(desc_lbl)
+
+            if rep.get("file_path"):
+                file_row = QHBoxLayout()
+                file_row.setSpacing(6)
+                file_label = QLabel(rep.get("file_name", "Arquivo"))
+                file_label.setObjectName("mutedText")
+                download_btn = QPushButton("Baixar relatório")
+                download_btn.setObjectName("primaryButton")
+                download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                download_btn.clicked.connect(lambda _, p=rep["file_path"]: self._download_report(p))
+                file_row.addWidget(file_label, 1)
+                file_row.addWidget(download_btn, 0)
+                text_col.addLayout(file_row)
+
+            text_col.addStretch(1)
+            card_layout.addLayout(text_col)
+
+            grid.addWidget(card, row, col)
+
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+
+    def _open_report_request_dialog(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Solicitar novo relatório")
+        dialog.setModal(True)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+
+        title_lbl = QLabel("Título do relatório")
+        title_input = QLineEdit()
+        title_input.setPlaceholderText("Ex.: Painel de inventário semanal")
+
+        desc_lbl = QLabel("Descrição/objetivo")
+        desc_input = QTextEdit()
+        desc_input.setPlaceholderText("Explique o que o relatório deve conter ou monitorar.")
+        desc_input.setMinimumHeight(120)
+
+        file_lbl = QLabel("Arquivo (pdf, xls, xlsx, csv, doc, docx, ppt, pptx, txt)")
+        file_path_display = QLabel("Nenhum arquivo selecionado")
+        file_path_display.setObjectName("mutedText")
+        file_btn = QPushButton("Selecionar arquivo")
+        file_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        selected_file: Dict[str, str | None] = {"path": None}
+
+        def _pick_file() -> None:
+            filter_str = "Documentos (*.pdf *.xls *.xlsx *.csv *.doc *.docx *.ppt *.pptx *.txt)"
+            chosen, _ = QFileDialog.getOpenFileName(dialog, "Selecionar arquivo do relatório", "", filter_str)
+            if chosen:
+                selected_file["path"] = chosen
+                file_path_display.setText(Path(chosen).name)
+
+        file_btn.clicked.connect(_pick_file)
+
+        layout.addWidget(title_lbl)
+        layout.addWidget(title_input)
+        layout.addWidget(desc_lbl)
+        layout.addWidget(desc_input)
+        layout.addWidget(file_lbl)
+        file_row = QHBoxLayout()
+        file_row.setSpacing(6)
+        file_row.addWidget(file_btn, 0)
+        file_row.addWidget(file_path_display, 1)
+        layout.addLayout(file_row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if ok_btn:
+            ok_btn.setText("Enviar solicitação")
+            ok_btn.setObjectName("primaryButton")
+            ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        if cancel_btn:
+            cancel_btn.setText("Cancelar")
+            cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        title = title_input.text().strip()
+        description = desc_input.toPlainText().strip()
+        source_file = selected_file.get("path")
+        if not source_file:
+            QMessageBox.warning(self, "Relatórios", "Selecione um arquivo para anexar ao relatório.")
+            return
+        try:
+            stored_path = self._store_report_file(Path(source_file))
+            with Session(report_engine) as report_session:
+                report_service = ReportService(report_session)
+                report_service.request_report(
+                    title=title,
+                    description=description,
+                    file_name=Path(source_file).name,
+                    file_path=str(stored_path),
+                )
+            QMessageBox.information(self, "Relatórios", "Solicitação de relatório enviada para aprovação.")
+            self._load_requests()
+        except AuthError as exc:
+            QMessageBox.warning(self, "Relatórios", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Relatórios", f"Erro ao enviar solicitação: {exc}")
+
+    def _store_report_file(self, source: Path) -> Path:
+        storage_dir = Path(__file__).resolve().parent.parent / "data" / "report_files"
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        allowed_ext = {".pdf", ".xls", ".xlsx", ".csv", ".doc", ".docx", ".ppt", ".pptx", ".txt"}
+        if source.suffix.lower() not in allowed_ext:
+            raise AuthError("Tipo de arquivo não suportado para relatório.")
+        if not source.exists():
+            raise AuthError("Arquivo selecionado não existe mais.")
+        dest = storage_dir / f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{source.name}"
+        shutil.copy2(source, dest)
+        return dest
+
+    def _download_report(self, file_path: str) -> None:
+        target = Path(file_path)
+        if not target.exists():
+            QMessageBox.warning(self, "Relatórios", "Arquivo do relatório não foi encontrado no disco.")
+            return
+        suggested = str(Path.home() / target.name)
+        dest_path, _ = QFileDialog.getSaveFileName(self, "Salvar relatório", suggested)
+        if not dest_path:
+            return
+        progress = QProgressDialog("Baixando relatório...", None, 0, 0, self)
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        try:
+            shutil.copy2(target, dest_path)
+            QMessageBox.information(self, "Relatórios", f"Arquivo salvo em:\n{dest_path}")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Relatórios", f"Erro ao salvar relatório: {exc}")
+        finally:
+            progress.close()
+
+    def _handle_delete_report(self, report_id: int) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Excluir relatório",
+            "Tem certeza que deseja excluir permanentemente este relatório?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        password = self._prompt_password("Digite sua senha para confirmar a exclusão:")
+        if password is None:
+            return
+
+        identifier = self.user_info.get("email") or self.user_info.get("name") or ""
+        try:
+            with Session(engine) as user_session, Session(report_engine) as report_session:
+                report_service = ReportService(report_session, user_session=user_session)
+                report_service.delete_report_request(report_id, identifier=identifier, password=password)
+            QMessageBox.information(self, "Relatórios", "Relatório excluído com sucesso.")
+            self._render_report_cards()
+        except AuthError as exc:
+            QMessageBox.warning(self, "Relatórios", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Relatórios", f"Erro ao excluir relatório: {exc}")
+
     def _prompt_password(self, prompt: str) -> str | None:
         dialog = QDialog(self)
         dialog.setWindowTitle("Confirmação")
@@ -558,7 +890,9 @@ class DashboardWindow(QMainWindow):
         header.setObjectName("cardTitle")
         layout.addWidget(header)
 
-        subtitle = QLabel("Aprove ou recuse pedidos de registro, redefinição de senha e novos POPs enviados pelos usuários.")
+        subtitle = QLabel(
+            "Aprove ou recuse pedidos de registro, redefinição de senha, novos POPs e relatórios enviados pelos usuários."
+        )
         subtitle.setObjectName("mutedText")
         layout.addWidget(subtitle)
 
@@ -712,10 +1046,13 @@ class DashboardWindow(QMainWindow):
                 pw_requests = password_request_repository.list_pending(session)
                 reg_requests = registration_request_repository.list_pending(session)
                 pop_requests = pop_request_repository.list_pending(session)
+            with Session(report_engine) as report_session:
+                report_requests = report_request_repository.list_pending(report_session)
             combined = (
                 [("senha", req) for req in pw_requests]
                 + [("registro", req) for req in reg_requests]
                 + [("pop", req) for req in pop_requests]
+                + [("relatorio", req) for req in report_requests]
             )
             if not combined:
                 placeholder = QListWidgetItem("Nenhuma solicitação pendente.")
@@ -740,7 +1077,13 @@ class DashboardWindow(QMainWindow):
 
         icon_lbl = QLabel()
         icon_lbl.setObjectName("requestIcon")
-        icon_name = "pop.png" if kind == "pop" else ("registrado_solicitação.png" if kind == "registro" else "senha_solicitação.png")
+        icon_name = "pop.png"
+        if kind == "relatorio":
+            icon_name = "report.png"
+        elif kind == "registro":
+            icon_name = "registrado_solicitação.png"
+        elif kind == "senha":
+            icon_name = "senha_solicitação.png"
         icon_pm = self._load_pixmap(icon_name, QSize(48, 48))
         if icon_pm is not None:
             icon_lbl.setPixmap(icon_pm)
@@ -770,8 +1113,32 @@ class DashboardWindow(QMainWindow):
             desc_lbl.setWordWrap(True)
             desc_lbl.setObjectName("requestStatus")
             info_col.addWidget(desc_lbl)
-
             req_kind_label = QLabel("Solicitação: POP")
+            req_kind_label.setObjectName("requestStatus")
+            info_col.addWidget(req_kind_label)
+        elif kind == "relatorio":
+            title_lbl = QLabel(req.title)
+            title_lbl.setObjectName("requestTitle")
+            info_col.addWidget(title_lbl)
+
+            detail = QLabel(f"Criado em {self._format_br_datetime(req.created_at)}")
+            detail.setObjectName("requestMeta")
+            info_col.addWidget(detail)
+
+            status = QLabel(f"Status: {req.status}")
+            status.setObjectName("requestStatus")
+            info_col.addWidget(status)
+
+            file_lbl = QLabel(f"Arquivo: {req.file_name}")
+            file_lbl.setObjectName("requestStatus")
+            info_col.addWidget(file_lbl)
+
+            desc_lbl = QLabel(req.description)
+            desc_lbl.setWordWrap(True)
+            desc_lbl.setObjectName("requestStatus")
+            info_col.addWidget(desc_lbl)
+
+            req_kind_label = QLabel("Solicitação: Relatório")
             req_kind_label.setObjectName("requestStatus")
             info_col.addWidget(req_kind_label)
         else:
@@ -821,30 +1188,41 @@ class DashboardWindow(QMainWindow):
 
     def _handle_request_action(self, request_id: int, kind: str, approve: bool) -> None:
         try:
-            with Session(engine) as session:
-                auth = AuthService(session)
-                if kind == "registro":
-                    if approve:
-                        auth.approve_registration_request(request_id)
-                        QMessageBox.information(self, "Solicitações", "Registro aprovado e usuário criado.")
+            if kind in {"registro", "senha", "pop"}:
+                with Session(engine) as session:
+                    auth = AuthService(session)
+                    if kind == "registro":
+                        if approve:
+                            auth.approve_registration_request(request_id)
+                            QMessageBox.information(self, "Solicitações", "Registro aprovado e usuário criado.")
+                        else:
+                            auth.reject_registration_request(request_id)
+                            QMessageBox.information(self, "Solicitações", "Registro recusado.")
+                    elif kind == "senha":
+                        if approve:
+                            auth.approve_password_request(request_id)
+                            QMessageBox.information(self, "Solicitações", "Solicitação aprovada e senha atualizada.")
+                        else:
+                            auth.reject_password_request(request_id)
+                            QMessageBox.information(self, "Solicitações", "Solicitação recusada.")
                     else:
-                        auth.reject_registration_request(request_id)
-                        QMessageBox.information(self, "Solicitações", "Registro recusado.")
-                elif kind == "senha":
+                        if approve:
+                            auth.approve_pop_request(request_id)
+                            QMessageBox.information(self, "Solicitações", "Solicitação de POP aprovada.")
+                            self._render_pop_cards()
+                        else:
+                            auth.reject_pop_request(request_id)
+                            QMessageBox.information(self, "Solicitações", "Solicitação de POP recusada.")
+            else:
+                with Session(report_engine) as report_session:
+                    report_service = ReportService(report_session)
                     if approve:
-                        auth.approve_password_request(request_id)
-                        QMessageBox.information(self, "Solicitações", "Solicitação aprovada e senha atualizada.")
+                        report_service.approve_report_request(request_id)
+                        QMessageBox.information(self, "Solicitações", "Solicitação de relatório aprovada.")
+                        self._render_report_cards()
                     else:
-                        auth.reject_password_request(request_id)
-                        QMessageBox.information(self, "Solicitações", "Solicitação recusada.")
-                else:
-                    if approve:
-                        auth.approve_pop_request(request_id)
-                        QMessageBox.information(self, "Solicitações", "Solicitação de POP aprovada.")
-                        self._render_pop_cards()
-                    else:
-                        auth.reject_pop_request(request_id)
-                        QMessageBox.information(self, "Solicitações", "Solicitação de POP recusada.")
+                        report_service.reject_report_request(request_id)
+                        QMessageBox.information(self, "Solicitações", "Solicitação de relatório recusada.")
             self._load_requests()
         except AuthError as exc:
             QMessageBox.warning(self, "Solicitações", str(exc))
@@ -887,7 +1265,7 @@ class DashboardWindow(QMainWindow):
                 border-radius: 14px;
             }
             #contentPanel { background: #f9fafb; }
-            #navTitle { font-size: 18px; font-weight: 800; color: #f8fafc; }
+            #navTitle { font-size: 16px; font-weight: 800; color: #f8fafc; }
             #navTitleTag {
                 padding: 4px 10px;
                 border-radius: 10px;
