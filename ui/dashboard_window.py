@@ -53,6 +53,7 @@ from repositories import (
     user_repository,
     pop_request_repository,
     report_request_repository,
+    order_request_repository,
 )
 
 
@@ -1044,7 +1045,7 @@ class DashboardWindow(QMainWindow):
         header_row.addLayout(buttons_row, 0)
         layout.addLayout(header_row)
 
-        info = QLabel("Em breve conectaremos estas ações à lógica de Senha 171.")
+        info = QLabel("Importe e depois solicite confirmação das novas ordens.")
         info.setObjectName("mutedText")
         layout.addWidget(info)
 
@@ -1090,8 +1091,7 @@ class DashboardWindow(QMainWindow):
 
     def _on_add_orders_167_clicked(self) -> None:
         if getattr(self, "_orders167_pending_confirm", False):
-            self._set_orders167_confirm_state(False)
-            QMessageBox.information(self, "Senha 167", "Confirmação registrada. Botão restaurado.")
+            self._submit_order_confirmation("Senha 167", "_last_preview_df_167", self._set_orders167_confirm_state)
             return
         self._handle_add_orders_167()
 
@@ -1242,7 +1242,7 @@ class DashboardWindow(QMainWindow):
     def _set_orders167_confirm_state(self, pending: bool) -> None:
         self._orders167_pending_confirm = pending
         if pending:
-            self.btn_add_orders167.setText("Confirmar novas Ordens")
+            self.btn_add_orders167.setText("Solicitar confirmação de novas Ordens")
             self.btn_add_orders167.setObjectName("acceptButton")
             self.btn_refresh167.setText("Não confirmar alteração")
             self.btn_refresh167.setObjectName("rejectButton")
@@ -1256,8 +1256,7 @@ class DashboardWindow(QMainWindow):
 
     def _on_add_orders_171_clicked(self) -> None:
         if getattr(self, "_orders171_pending_confirm", False):
-            self._set_orders171_confirm_state(False)
-            QMessageBox.information(self, "Senha 171", "Confirmação registrada. Botão restaurado.")
+            self._submit_order_confirmation("Senha 171", "_last_preview_df_171", self._set_orders171_confirm_state)
             return
         self._handle_add_orders_171()
 
@@ -1390,6 +1389,21 @@ class DashboardWindow(QMainWindow):
         table.setSortingEnabled(True)
         self._last_preview_df_171 = df.copy()
 
+    def _submit_order_confirmation(self, origin: str, df_attr: str, reset_state) -> None:
+        df = getattr(self, df_attr, None)
+        if df is None or getattr(df, "empty", True):
+            QMessageBox.warning(self, origin, "Nenhuma prévia carregada para solicitar confirmação.")
+            return
+        total = len(df.index)
+        desc = f"{total} ordens processadas aguardando confirmação."
+        try:
+            with Session(engine) as session:
+                order_request_repository.create_request(session, origin=origin, description=desc, total_orders=total)
+            QMessageBox.information(self, origin, "Solicitação enviada para 'Solicitações'.")
+            reset_state(False)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, origin, f"Erro ao registrar a solicitação: {exc}")
+
     def _handle_download_preview_171(self) -> None:
         if self._last_preview_df_171 is None or getattr(self._last_preview_df_171, "empty", True):
             QMessageBox.information(self, "Senha 171", "Nenhuma prévia disponível para download.")
@@ -1408,7 +1422,7 @@ class DashboardWindow(QMainWindow):
     def _set_orders171_confirm_state(self, pending: bool) -> None:
         self._orders171_pending_confirm = pending
         if pending:
-            self.btn_add_orders171.setText("Confirmar novas Ordens")
+            self.btn_add_orders171.setText("Solicitar confirmação de novas Ordens")
             self.btn_add_orders171.setObjectName("acceptButton")
             self.btn_refresh171.setText("Não confirmar alteração")
             self.btn_refresh171.setObjectName("rejectButton")
@@ -1555,12 +1569,14 @@ class DashboardWindow(QMainWindow):
                 pw_requests = password_request_repository.list_pending(session)
                 reg_requests = registration_request_repository.list_pending(session)
                 pop_requests = pop_request_repository.list_pending(session)
+                order_requests = order_request_repository.list_pending(session)
             with Session(report_engine) as report_session:
                 report_requests = report_request_repository.list_pending(report_session)
             combined = (
                 [("senha", req) for req in pw_requests]
                 + [("registro", req) for req in reg_requests]
                 + [("pop", req) for req in pop_requests]
+                + [("ordem", req) for req in order_requests]
                 + [("relatorio", req) for req in report_requests]
             )
             if not combined:
@@ -1593,6 +1609,14 @@ class DashboardWindow(QMainWindow):
             icon_name = "registrado_solicitação.png"
         elif kind == "senha":
             icon_name = "senha_solicitação.png"
+        elif kind == "ordem":
+            origin_txt = str(getattr(req, "origin", "")).lower()
+            if "167" in origin_txt:
+                icon_name = "lock-167.png"
+            elif "171" in origin_txt:
+                icon_name = "lock-171.png"
+            else:
+                icon_name = "solicitacao.png"
         icon_pm = self._load_pixmap(icon_name, QSize(48, 48))
         if icon_pm is not None:
             icon_lbl.setPixmap(icon_pm)
@@ -1648,6 +1672,32 @@ class DashboardWindow(QMainWindow):
             info_col.addWidget(desc_lbl)
 
             req_kind_label = QLabel("Solicitação: Relatório")
+            req_kind_label.setObjectName("requestStatus")
+            info_col.addWidget(req_kind_label)
+        elif kind == "ordem":
+            title_lbl = QLabel(f"Confirmação {req.origin}")
+            title_lbl.setObjectName("requestTitle")
+            info_col.addWidget(title_lbl)
+
+            detail = QLabel(f"Criado em {self._format_br_datetime(req.created_at)}")
+            detail.setObjectName("requestMeta")
+            info_col.addWidget(detail)
+
+            status = QLabel(f"Status: {req.status}")
+            status.setObjectName("requestStatus")
+            info_col.addWidget(status)
+
+            if getattr(req, "total_orders", None) is not None:
+                total_lbl = QLabel(f"Total de ordens: {req.total_orders}")
+                total_lbl.setObjectName("requestStatus")
+                info_col.addWidget(total_lbl)
+
+            desc_lbl = QLabel(req.description)
+            desc_lbl.setWordWrap(True)
+            desc_lbl.setObjectName("requestStatus")
+            info_col.addWidget(desc_lbl)
+
+            req_kind_label = QLabel("Solicitação: Confirmação de Ordens")
             req_kind_label.setObjectName("requestStatus")
             info_col.addWidget(req_kind_label)
         else:
