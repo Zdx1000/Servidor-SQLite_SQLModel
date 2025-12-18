@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QAbstractItemView,
 )
 
 from sqlmodel import Session
@@ -45,6 +46,7 @@ from db.report_config import report_engine
 from services.auth_service import AuthService, AuthError
 from services.report_service import ReportService
 from services.senha171_service import AdicionarOrdensNovas
+from services.senha167_service import AdicionarOrdensNovas2
 from repositories import (
     password_request_repository,
     registration_request_repository,
@@ -63,6 +65,8 @@ class DashboardWindow(QMainWindow):
         self._static_pops = [
         ]
         self._last_preview_df_171 = None
+        self._last_preview_df_167 = None
+        self._orders167_pending_confirm = False
         self.setWindowTitle("Controle de Estoque - Principal")
         self.setMinimumSize(1100, 640)
         self._icon_dir = Path(__file__).resolve().parent / "assets" / "icons"
@@ -151,6 +155,7 @@ class DashboardWindow(QMainWindow):
                 self.btn_estoque,
                 self.btn_relatorios,
                 self.btn_solicitacoes,
+                self.btn_senha,
                 self.btn_senha171,
                 self.btn_config,
             ):
@@ -218,7 +223,7 @@ class DashboardWindow(QMainWindow):
         self.stack.addWidget(self._build_pops_page())
         self.stack.addWidget(self._build_reports_page())
         self.stack.addWidget(self._build_requests_page())
-        self.stack.addWidget(self._build_placeholder_page("Senha 167 (em breve)"))
+        self.stack.addWidget(self._build_password167_page())
         self.stack.addWidget(self._build_placeholder_page("Sindicância (em breve)"))
         self.stack.addWidget(self._build_password171_page())
         self.stack.addWidget(self._build_settings_page())
@@ -930,6 +935,81 @@ class DashboardWindow(QMainWindow):
         self._load_requests()
         return page
 
+    def _build_password167_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(14)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+
+        header = QLabel("Senha 167")
+        header.setObjectName("pageTitle")
+        header_row.addWidget(header, 1)
+
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
+
+        self.btn_refresh167 = QPushButton("Atualizar dados")
+        self.btn_refresh167.setObjectName("primaryButton")
+        self.btn_refresh167.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_refresh167.clicked.connect(self._on_refresh_167_clicked)
+
+        self.btn_add_orders167 = QPushButton("Adicionar ordens novas")
+        self.btn_add_orders167.setObjectName("secondaryButton")
+        self.btn_add_orders167.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add_orders167.clicked.connect(self._on_add_orders_167_clicked)
+
+        buttons_row.addWidget(self.btn_refresh167, 0)
+        buttons_row.addWidget(self.btn_add_orders167, 0)
+        buttons_row.addStretch(1)
+
+        header_row.addLayout(buttons_row, 0)
+        layout.addLayout(header_row)
+
+        info = QLabel("Fluxo de ordens 167: importe e valide antes de confirmar.")
+        info.setObjectName("mutedText")
+        layout.addWidget(info)
+
+        preview_label = QLabel("Prévia (clique no cabeçalho para ordenar)")
+        preview_label.setObjectName("cardTitle")
+        layout.addWidget(preview_label)
+
+        preview_actions = QHBoxLayout()
+        preview_actions.setContentsMargins(0, 0, 0, 0)
+        preview_actions.setSpacing(8)
+        preview_actions.addStretch(1)
+        self.btn_download_preview_167 = QPushButton("Baixar Prévia")
+        self.btn_download_preview_167.setObjectName("primaryButton")
+        self.btn_download_preview_167.setCursor(Qt.CursorShape.PointingHandCursor)
+        dl_icon_167 = self._load_icon("baixar.png")
+        if dl_icon_167 is not None:
+            self.btn_download_preview_167.setIcon(dl_icon_167)
+            self.btn_download_preview_167.setIconSize(QSize(16, 16))
+        self.btn_download_preview_167.clicked.connect(self._handle_download_preview_167)
+        preview_actions.addWidget(self.btn_download_preview_167, 0)
+        layout.addLayout(preview_actions)
+
+        self.table_preview_167 = QTableWidget()
+        self.table_preview_167.setObjectName("previewTable167")
+        self.table_preview_167.setSortingEnabled(True)
+        self.table_preview_167.setColumnCount(0)
+        self.table_preview_167.setRowCount(0)
+        header_view = self.table_preview_167.horizontalHeader()
+        header_view.setStretchLastSection(False)
+        header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setMinimumSectionSize(90)
+        self.table_preview_167.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.table_preview_167.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        row_height = self.table_preview_167.verticalHeader().defaultSectionSize()
+        header_height = header_view.height()
+        self.table_preview_167.setMinimumHeight(header_height + (row_height * 12) + 24)
+        layout.addWidget(self.table_preview_167)
+
+        layout.addStretch(1)
+        return page
+
     def _build_password171_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -995,15 +1075,184 @@ class DashboardWindow(QMainWindow):
         self.table_preview_171.setColumnCount(0)
         self.table_preview_171.setRowCount(0)
         header_view = self.table_preview_171.horizontalHeader()
-        header_view.setStretchLastSection(True)
-        header_view.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header_view.setStretchLastSection(False)
+        header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setMinimumSectionSize(90)
+        self.table_preview_171.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.table_preview_171.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         row_height = self.table_preview_171.verticalHeader().defaultSectionSize()
         header_height = header_view.height()
-        self.table_preview_171.setMinimumHeight(header_height + (row_height * 15) + 24)
+        self.table_preview_171.setMinimumHeight(header_height + (row_height * 12) + 24)
         layout.addWidget(self.table_preview_171)
 
         layout.addStretch(1)
         return page
+
+    def _on_add_orders_167_clicked(self) -> None:
+        if getattr(self, "_orders167_pending_confirm", False):
+            self._set_orders167_confirm_state(False)
+            QMessageBox.information(self, "Senha 167", "Confirmação registrada. Botão restaurado.")
+            return
+        self._handle_add_orders_167()
+
+    def _on_refresh_167_clicked(self) -> None:
+        if getattr(self, "_orders167_pending_confirm", False):
+            self._set_orders167_confirm_state(False)
+            QMessageBox.information(self, "Senha 167", "Alteração não confirmada. Estado revertido.")
+        else:
+            QMessageBox.information(self, "Senha 167", "Nenhuma alteração pendente para desfazer.")
+
+    def _handle_add_orders_167(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Importar ordens (xlsx)")
+        dialog.setModal(True)
+        v = QVBoxLayout(dialog)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(10)
+
+        label = QLabel("Selecione um arquivo XLSX com as ordens.")
+        v.addWidget(label)
+
+        file_display = QLabel("Nenhum arquivo selecionado")
+        file_display.setObjectName("mutedText")
+        pick_btn = QPushButton("Escolher arquivo")
+        pick_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        selected: Dict[str, str | None] = {"path": None}
+
+        def _pick() -> None:
+            chosen, _ = QFileDialog.getOpenFileName(dialog, "Selecionar XLSX", "", "Planilhas (*.xlsx)")
+            if chosen:
+                selected["path"] = chosen
+                file_display.setText(Path(chosen).name)
+
+        pick_btn.clicked.connect(_pick)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(pick_btn, 0)
+        row.addWidget(file_display, 1)
+        v.addLayout(row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if ok_btn:
+            ok_btn.setText("Processar")
+            ok_btn.setObjectName("primaryButton")
+            ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        if cancel_btn:
+            cancel_btn.setText("Cancelar")
+            cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        v.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        file_path = selected.get("path")
+        if not file_path:
+            QMessageBox.warning(self, "Senha 167", "Nenhum arquivo XLSX selecionado.")
+            return
+
+        try:
+            helper = AdicionarOrdensNovas2(file_path)
+            df = helper.load_xlsx()
+            df_manip = helper.Manipular_Dados(df=df)
+            print("=== XLSX processado (Senha 167) ===")
+            if df_manip is None or isinstance(df_manip, str):
+                print(df_manip)
+            else:
+                print(df_manip)
+                self._populate_preview_table_167(df_manip)
+                self._set_orders167_confirm_state(True)
+                self._last_preview_df_167 = df_manip.copy()
+            QMessageBox.information(self, "Senha 167", "Arquivo processado. Veja o console para prévia dos dados.")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Senha 167", f"Erro ao processar o XLSX: {exc}")
+
+    def _populate_preview_table_167(self, df) -> None:
+        if not hasattr(self, "table_preview_167"):
+            return
+        table = self.table_preview_167
+        table.setSortingEnabled(False)
+        table.clear()
+
+        if df is None:
+            table.setRowCount(0)
+            table.setColumnCount(0)
+            table.setSortingEnabled(True)
+            return
+
+        columns = list(df.columns)
+        table.setColumnCount(len(columns))
+
+        header_items = []
+        for col_name in columns:
+            item = QTableWidgetItem(col_name)
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            item.setForeground(Qt.GlobalColor.white)
+            item.setBackground(QColor("#0f265c"))
+            if col_name.strip().lower() == "valor":
+                item.setBackground(QColor("#ffeb00"))
+                item.setForeground(Qt.GlobalColor.black)
+            header_items.append(item)
+
+        for idx, item in enumerate(header_items):
+            table.setHorizontalHeaderItem(idx, item)
+
+        rows = len(df.index)
+        table.setRowCount(rows)
+
+        for row_idx in range(rows):
+            row_series = df.iloc[row_idx]
+            for col_idx, col_name in enumerate(columns):
+                val = row_series[col_name]
+                val_str = "" if val is None else str(val)
+                item = QTableWidgetItem(val_str)
+                table.setItem(row_idx, col_idx, item)
+
+        header_view = table.horizontalHeader()
+        header_view.setStretchLastSection(False)
+        header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setMinimumSectionSize(90)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        table.setSortingEnabled(True)
+        self._last_preview_df_167 = df.copy()
+
+    def _handle_download_preview_167(self) -> None:
+        if self._last_preview_df_167 is None or getattr(self._last_preview_df_167, "empty", True):
+            QMessageBox.information(self, "Senha 167", "Nenhuma prévia disponível para download.")
+            return
+
+        suggested = str(Path.home() / "previa_senha167.xlsx")
+        dest_path, _ = QFileDialog.getSaveFileName(self, "Salvar prévia", suggested, "Planilha Excel (*.xlsx)")
+        if not dest_path:
+            return
+        try:
+            self._last_preview_df_167.to_excel(dest_path, index=False)
+            QMessageBox.information(self, "Senha 167", f"Prévia salva em:\n{dest_path}")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Senha 167", f"Erro ao salvar a prévia: {exc}")
+
+    def _set_orders167_confirm_state(self, pending: bool) -> None:
+        self._orders167_pending_confirm = pending
+        if pending:
+            self.btn_add_orders167.setText("Confirmar novas Ordens")
+            self.btn_add_orders167.setObjectName("acceptButton")
+            self.btn_refresh167.setText("Não confirmar alteração")
+            self.btn_refresh167.setObjectName("rejectButton")
+        else:
+            self.btn_add_orders167.setText("Adicionar ordens novas")
+            self.btn_add_orders167.setObjectName("secondaryButton")
+            self.btn_refresh167.setText("Atualizar dados")
+            self.btn_refresh167.setObjectName("primaryButton")
+        self._repolish(self.btn_add_orders167)
+        self._repolish(self.btn_refresh167)
 
     def _on_add_orders_171_clicked(self) -> None:
         if getattr(self, "_orders171_pending_confirm", False):
@@ -1133,8 +1382,11 @@ class DashboardWindow(QMainWindow):
                 table.setItem(row_idx, col_idx, item)
 
         header_view = table.horizontalHeader()
-        header_view.setStretchLastSection(True)
-        header_view.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header_view.setStretchLastSection(False)
+        header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setMinimumSectionSize(90)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         table.setSortingEnabled(True)
         self._last_preview_df_171 = df.copy()
 

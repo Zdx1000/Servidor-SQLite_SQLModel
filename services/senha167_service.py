@@ -1,14 +1,41 @@
-import pandas as pd
+from __future__ import annotations
+
 import numpy as np
+import pandas as pd
 from pandas.tseries.offsets import CustomBusinessDay
 
 
 class AdicionarOrdensNovas2:
+    """Helper para importar e normalizar ordens do fluxo 167."""
+
     COLS = [
-        "Nro Ordem", "STATUS", "TRATATIVA", "Responsável", "Data Fechamento Divergência",
-        "Conferente", "OBS", "OBS - 2", "Região", "Filial Contábil", "Tipo Devol.", "Carga", "Valor", "Falta",
-        "MÊS", "Semana", "Data Ordem", "DATA LIMITE", "MÊS DE FECH", "ANO", "Semana-Limit", "Cód. Região",
-        "Região - 2", "Gerencia", "STT", "Email", "Dias a Vencer"
+        "Nro Ordem",
+        "STATUS",
+        "TRATATIVA",
+        "Responsável",
+        "Data Fechamento Divergência",
+        "Conferente",
+        "OBS",
+        "OBS - 2",
+        "Região",
+        "Filial Contábil",
+        "Tipo Devol.",
+        "Carga",
+        "Valor",
+        "Falta",
+        "MÊS",
+        "Semana",
+        "Data Ordem",
+        "DATA LIMITE",
+        "MÊS DE FECH",
+        "ANO",
+        "Semana-Limit",
+        "Cód. Região",
+        "Região - 2",
+        "Gerencia",
+        "STT",
+        "Email",
+        "Dias a Vencer",
     ]
 
     FERIADOS_FIXOS_MD = [
@@ -25,18 +52,14 @@ class AdicionarOrdensNovas2:
     ]
 
     def __init__(self, file_path: str) -> None:
-        self.file_path = file_path
+        self.file_path = str(file_path)
 
     def load_xlsx(self) -> pd.DataFrame:
         return pd.read_excel(self.file_path, engine="openpyxl")
 
     @staticmethod
     def _to_float_valor(s: pd.Series) -> pd.Series:
-
-        return pd.to_numeric(
-            s.astype("string").str.replace(",", ".", regex=False),
-            errors="coerce"
-        ).fillna(0.0)
+        return pd.to_numeric(s.astype("string").str.replace(",", ".", regex=False), errors="coerce").fillna(0.0)
 
     def Manipular_Dados(self, df: pd.DataFrame | None = None) -> pd.DataFrame | None:
         if df is None:
@@ -46,7 +69,7 @@ class AdicionarOrdensNovas2:
 
         df = df.rename(columns={"Cliente": "Região", "Cód. Cli": "Filial Contábil"})
         df = df.reindex(columns=self.COLS, fill_value="")
-
+        df["Responsável"] = df["Responsável"].fillna("")
 
         dt = pd.to_datetime(df["Data Ordem"], dayfirst=True, errors="coerce")
         df["Data Ordem"] = dt
@@ -54,27 +77,18 @@ class AdicionarOrdensNovas2:
         df["ANO"] = dt.dt.year
         df["Semana"] = dt.dt.isocalendar().week.astype("Int64")
 
-
         df["Valor"] = self._to_float_valor(df["Valor"])
-
- 
         df["STATUS"] = ""
-
 
         falta = df["Falta"]
         mask_falta = falta.notna() & falta.astype("string").str.strip().ne("")
         df = df.loc[mask_falta].copy()
 
-
         dt2 = df["Data Ordem"]
         if dt2.notna().any():
             min_y = int(dt2.dt.year.min())
             max_y = int(dt2.dt.year.max()) + 1
-            holidays = [
-                pd.Timestamp(y, m, d)
-                for y in range(min_y, max_y + 1)
-                for (m, d) in self.FERIADOS_FIXOS_MD
-            ]
+            holidays = [pd.Timestamp(y, m, d) for y in range(min_y, max_y + 1) for (m, d) in self.FERIADOS_FIXOS_MD]
         else:
             holidays = []
 
@@ -92,12 +106,3 @@ class AdicionarOrdensNovas2:
         df["STT"] = np.where(df["Valor"] < 50, "SEM EVIDENCIA", "COM EVIDENCIA")
 
         return df
-
-
-
-if __name__ == "__main__":
-    # exemplo de uso
-    adicionar_ordens_novas = AdicionarOrdensNovas2("Ordens167.xlsx")
-    df = adicionar_ordens_novas.load_xlsx()
-    df_tratado = adicionar_ordens_novas.Manipular_Dados(df=df)
-    df_tratado.to_excel("Ordens167_tratado.xlsx", index=False)
