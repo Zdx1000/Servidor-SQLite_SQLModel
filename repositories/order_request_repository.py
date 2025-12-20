@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from sqlmodel import Session, select
 
-from db.models import OrderRequest
+from db.order_models import OrderRequest
 
 
 def create_request(session: Session, origin: str, description: str, total_orders: int | None = None) -> OrderRequest:

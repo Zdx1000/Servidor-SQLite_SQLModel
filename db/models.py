@@ -53,12 +53,3 @@ class PopRequest(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
-class OrderRequest(SQLModel, table=True):
-    __tablename__ = "order_requests"
-
-    id: int | None = Field(default=None, primary_key=True)
-    origin: str = Field(nullable=False, max_length=64)
-    description: str = Field(nullable=False, max_length=1024)
-    total_orders: int | None = Field(default=None)
-    status: str = Field(default="pendente", nullable=False, max_length=32)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

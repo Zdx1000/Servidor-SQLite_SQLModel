@@ -43,10 +43,12 @@ from sqlmodel import Session
 
 from db.config import engine
 from db.report_config import report_engine
+from db.order_config import order_request_engine
 from services.auth_service import AuthService, AuthError
 from services.report_service import ReportService
 from services.senha171_service import AdicionarOrdensNovas
 from services.senha167_service import AdicionarOrdensNovas2
+from services.order_service import OrderService
 from repositories import (
     password_request_repository,
     registration_request_repository,
@@ -68,6 +70,7 @@ class DashboardWindow(QMainWindow):
         self._last_preview_df_171 = None
         self._last_preview_df_167 = None
         self._orders167_pending_confirm = False
+        self.order_service = OrderService()
         self.setWindowTitle("Controle de Estoque - Principal")
         self.setMinimumSize(1100, 640)
         self._icon_dir = Path(__file__).resolve().parent / "assets" / "icons"
@@ -1394,11 +1397,8 @@ class DashboardWindow(QMainWindow):
         if df is None or getattr(df, "empty", True):
             QMessageBox.warning(self, origin, "Nenhuma prévia carregada para solicitar confirmação.")
             return
-        total = len(df.index)
-        desc = f"{total} ordens processadas aguardando confirmação."
         try:
-            with Session(engine) as session:
-                order_request_repository.create_request(session, origin=origin, description=desc, total_orders=total)
+            self.order_service.submit_request(origin, df)
             QMessageBox.information(self, origin, "Solicitação enviada para 'Solicitações'.")
             reset_state(False)
         except Exception as exc:  # noqa: BLE001
@@ -1569,7 +1569,8 @@ class DashboardWindow(QMainWindow):
                 pw_requests = password_request_repository.list_pending(session)
                 reg_requests = registration_request_repository.list_pending(session)
                 pop_requests = pop_request_repository.list_pending(session)
-                order_requests = order_request_repository.list_pending(session)
+            with Session(order_request_engine) as order_session:
+                order_requests = order_request_repository.list_pending(order_session)
             with Session(report_engine) as report_session:
                 report_requests = report_request_repository.list_pending(report_session)
             combined = (
@@ -1772,6 +1773,12 @@ class DashboardWindow(QMainWindow):
                         else:
                             auth.reject_pop_request(request_id)
                             QMessageBox.information(self, "Solicitações", "Solicitação de POP recusada.")
+            elif kind == "ordem":
+                self.order_service.approve(request_id, approve)
+                if approve:
+                    QMessageBox.information(self, "Solicitações", "Solicitação de ordens aprovada e armazenada.")
+                else:
+                    QMessageBox.information(self, "Solicitações", "Solicitação de ordens recusada.")
             else:
                 with Session(report_engine) as report_session:
                     report_service = ReportService(report_session)

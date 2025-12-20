@@ -5,6 +5,8 @@ from . import (
 	pop_request_repository,
 	report_request_repository,
 	order_request_repository,
+	order_pending_repository,
+	order_repository,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
 	"pop_request_repository",
 	"report_request_repository",
 	"order_request_repository",
+	"order_pending_repository",
+	"order_repository",
 ]
