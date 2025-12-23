@@ -83,6 +83,10 @@ class AuthForm(QWidget):
         for widget in self._inputs.values():
             widget.setStyleSheet("")
 
+    def on_return_pressed(self, callback) -> None:
+        for widget in self._inputs.values():
+            widget.returnPressed.connect(callback)
+
     def mark_error(self, key: str) -> None:
         widget = self._inputs.get(key)
         if widget:
@@ -306,6 +310,7 @@ class LoginWindow(QMainWindow):
             ],
             submit_label="Entrar",
         )
+        self.login_form.on_return_pressed(lambda: self._handle_submit("login"))
 
         self.register_form = AuthForm(
             title="Solicitar registro",

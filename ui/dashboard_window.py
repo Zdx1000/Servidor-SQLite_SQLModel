@@ -43,7 +43,7 @@ from sqlmodel import Session
 
 from db.config import engine
 from db.report_config import report_engine
-from db.order_config import order_request_engine
+from db.order_config import order_request_engine, order_data_engine
 from services.auth_service import AuthService, AuthError
 from services.report_service import ReportService
 from services.senha171_service import AdicionarOrdensNovas
@@ -56,6 +56,7 @@ from repositories import (
     pop_request_repository,
     report_request_repository,
     order_request_repository,
+    order_repository,
 )
 
 
@@ -652,11 +653,30 @@ class DashboardWindow(QMainWindow):
                         "file_path": req.file_path,
                         "file_name": req.file_name,
                         "id": req.id,
+                        "is_order": False,
                     }
                     for req in approved
                 )
         except Exception:
             pass
+
+        # Append fixed reports for Senha 167/171 (dados aprovados das ordens)
+        reports.append(
+            {
+                "title": "Senha 167 - Ordens aprovadas",
+                "desc": "Exporta todas as ordens 167 aprovadas (banco orders.db).",
+                "is_order": True,
+                "origin": "Senha 167",
+            }
+        )
+        reports.append(
+            {
+                "title": "Senha 171 - Ordens aprovadas",
+                "desc": "Exporta todas as ordens 171 aprovadas (banco orders.db).",
+                "is_order": True,
+                "origin": "Senha 171",
+            }
+        )
 
         for idx, rep in enumerate(reports):
             row, col = divmod(idx, 2)
@@ -684,7 +704,7 @@ class DashboardWindow(QMainWindow):
             title_row.addWidget(title_lbl)
             title_row.addStretch(1)
 
-            if rep.get("id") is not None:
+            if rep.get("id") is not None and not rep.get("is_order"):
                 delete_btn = QPushButton()
                 delete_btn.setFixedSize(32, 32)
                 delete_btn.setObjectName("deleteIconButton")
@@ -704,7 +724,19 @@ class DashboardWindow(QMainWindow):
             desc_lbl.setObjectName("mutedText")
             text_col.addWidget(desc_lbl)
 
-            if rep.get("file_path"):
+            if rep.get("is_order"):
+                file_row = QHBoxLayout()
+                file_row.setSpacing(6)
+                file_label = QLabel("Exportar .xlsx")
+                file_label.setObjectName("mutedText")
+                download_btn = QPushButton("Baixar ordens")
+                download_btn.setObjectName("primaryButton")
+                download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                download_btn.clicked.connect(lambda _, o=rep.get("origin", ""): self._download_order_report(o))
+                file_row.addWidget(file_label, 1)
+                file_row.addWidget(download_btn, 0)
+                text_col.addLayout(file_row)
+            elif rep.get("file_path"):
                 file_row = QHBoxLayout()
                 file_row.setSpacing(6)
                 file_label = QLabel(rep.get("file_name", "Arquivo"))
@@ -844,6 +876,25 @@ class DashboardWindow(QMainWindow):
         finally:
             progress.close()
 
+    def _download_order_report(self, origin: str) -> None:
+        origin_norm = origin.strip()
+        try:
+            with Session(order_data_engine) as data_session:
+                rows = order_repository.list_all(data_session, origin_norm)
+            if not rows:
+                QMessageBox.information(self, "Relatórios", f"Nenhuma ordem aprovada para {origin_norm}.")
+                return
+
+            df = self._orders_to_df(origin_norm, rows)
+            suggested_name = "ordens_167.xlsx" if "167" in origin_norm else "ordens_171.xlsx"
+            dest_path, _ = QFileDialog.getSaveFileName(self, "Salvar ordens", str(Path.home() / suggested_name), "Planilha Excel (*.xlsx)")
+            if not dest_path:
+                return
+            df.to_excel(dest_path, index=False)
+            QMessageBox.information(self, "Relatórios", f"Arquivo salvo em:\n{dest_path}")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Relatórios", f"Erro ao exportar ordens: {exc}")
+
     def _handle_delete_report(self, report_id: int) -> None:
         confirm = QMessageBox.question(
             self,
@@ -893,6 +944,112 @@ class DashboardWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             return pw_input.text()
         return None
+
+    def _orders_to_df(self, origin: str, rows) -> pd.DataFrame:
+        """Converte registros aprovados em DataFrame para exportação."""
+        is_167 = "167" in origin
+        if is_167:
+            columns = [
+                "Nro Ordem",
+                "STATUS",
+                "TRATATIVA",
+                "Responsável",
+                "Data Fechamento Divergência",
+                "Conferente",
+                "OBS",
+                "OBS - 2",
+                "Região",
+                "Filial Contábil",
+                "Tipo Devol.",
+                "Carga",
+                "Valor",
+                "Falta",
+                "MÊS",
+                "Semana",
+                "Data Ordem",
+                "DATA LIMITE",
+                "MÊS DE FECH",
+                "ANO",
+                "Semana-Limit",
+                "Cód. Região",
+                "Região - 2",
+                "Gerencia",
+                "STT",
+                "Email",
+                "Dias a Vencer",
+            ]
+        else:
+            columns = [
+                "Nro Ordem",
+                "Status",
+                "Tratativa",
+                "Nome",
+                "Data Tratativa",
+                "Cliente",
+                "Cód. Cli",
+                "Tipo Devol.",
+                "Carga",
+                "Valor",
+                "MÊS",
+                "ANO",
+                "Semana",
+                "Data Ordem",
+            ]
+
+        records = []
+        for r in rows:
+            d = r.dict()
+            if is_167:
+                rec = {
+                    "Nro Ordem": d.get("nro_ordem"),
+                    "STATUS": d.get("status"),
+                    "TRATATIVA": d.get("tratativa"),
+                    "Responsável": d.get("responsavel"),
+                    "Data Fechamento Divergência": d.get("data_fechamento_div"),
+                    "Conferente": d.get("conferente"),
+                    "OBS": d.get("obs"),
+                    "OBS - 2": d.get("obs2"),
+                    "Região": d.get("regiao"),
+                    "Filial Contábil": d.get("filial_contabil"),
+                    "Tipo Devol.": d.get("tipo_devolucao"),
+                    "Carga": d.get("carga"),
+                    "Valor": d.get("valor"),
+                    "Falta": d.get("falta"),
+                    "MÊS": d.get("mes"),
+                    "Semana": d.get("semana"),
+                    "Data Ordem": d.get("data_ordem"),
+                    "DATA LIMITE": d.get("data_limite"),
+                    "MÊS DE FECH": d.get("mes_fech"),
+                    "ANO": d.get("ano"),
+                    "Semana-Limit": d.get("semana_limit"),
+                    "Cód. Região": d.get("cod_regiao"),
+                    "Região - 2": d.get("regiao2"),
+                    "Gerencia": d.get("gerencia"),
+                    "STT": d.get("stt"),
+                    "Email": d.get("email"),
+                    "Dias a Vencer": d.get("dias_vencer"),
+                }
+            else:
+                rec = {
+                    "Nro Ordem": d.get("nro_ordem"),
+                    "Status": d.get("status"),
+                    "Tratativa": d.get("tratativa"),
+                    "Nome": d.get("nome"),
+                    "Data Tratativa": d.get("data_tratativa"),
+                    "Cliente": d.get("cliente"),
+                    "Cód. Cli": d.get("cod_cli"),
+                    "Tipo Devol.": d.get("tipo_devolucao"),
+                    "Carga": d.get("carga"),
+                    "Valor": d.get("valor"),
+                    "MÊS": d.get("mes"),
+                    "ANO": d.get("ano"),
+                    "Semana": d.get("semana"),
+                    "Data Ordem": d.get("data_ordem"),
+                }
+            records.append(rec)
+
+        df = pd.DataFrame.from_records(records, columns=columns)
+        return df
 
     def _build_placeholder_page(self, text: str) -> QWidget:
         page = QWidget()
@@ -955,7 +1112,7 @@ class DashboardWindow(QMainWindow):
         buttons_row = QHBoxLayout()
         buttons_row.setSpacing(8)
 
-        self.btn_refresh167 = QPushButton("Atualizar dados")
+        self.btn_refresh167 = QPushButton("Inserir planilha Atualizada")
         self.btn_refresh167.setObjectName("primaryButton")
         self.btn_refresh167.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_refresh167.clicked.connect(self._on_refresh_167_clicked)
@@ -1030,7 +1187,7 @@ class DashboardWindow(QMainWindow):
         buttons_row = QHBoxLayout()
         buttons_row.setSpacing(8)
 
-        self.btn_refresh171 = QPushButton("Atualizar dados")
+        self.btn_refresh171 = QPushButton("Inserir planilha Atualizada")
         self.btn_refresh171.setObjectName("primaryButton")
         self.btn_refresh171.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_refresh171.clicked.connect(self._on_refresh_171_clicked)
@@ -1252,7 +1409,7 @@ class DashboardWindow(QMainWindow):
         else:
             self.btn_add_orders167.setText("Adicionar ordens novas")
             self.btn_add_orders167.setObjectName("secondaryButton")
-            self.btn_refresh167.setText("Atualizar dados")
+            self.btn_refresh167.setText("Inserir planilha Atualizada")
             self.btn_refresh167.setObjectName("primaryButton")
         self._repolish(self.btn_add_orders167)
         self._repolish(self.btn_refresh167)
@@ -1429,7 +1586,7 @@ class DashboardWindow(QMainWindow):
         else:
             self.btn_add_orders171.setText("Adicionar ordens novas")
             self.btn_add_orders171.setObjectName("secondaryButton")
-            self.btn_refresh171.setText("Atualizar dados")
+            self.btn_refresh171.setText("Inserir planilha Atualizada")
             self.btn_refresh171.setObjectName("primaryButton")
         self._repolish(self.btn_add_orders171)
         self._repolish(self.btn_refresh171)
