@@ -66,6 +66,8 @@ class DashboardWindow(QMainWindow):
     def __init__(self, user_info: Dict[str, str]) -> None:
         super().__init__()
         self.user_info = user_info
+        role_val = (user_info.get("role") or "").strip().upper()
+        self.is_admin = role_val == "ADMINISTRADOR"
         self._static_pops = [
         ]
         self._last_preview_df_171 = None
@@ -127,6 +129,7 @@ class DashboardWindow(QMainWindow):
         self.btn_senha = QPushButton("Senha 167")
         self.btn_sindicancia = QPushButton("Sindicância")
         self.btn_senha171 = QPushButton("Senha 171")
+        self.btn_users = QPushButton("Usuários")
         self.btn_config = QPushButton("Configurações")
 
         buttons = (
@@ -137,6 +140,7 @@ class DashboardWindow(QMainWindow):
             self.btn_senha,
             self.btn_sindicancia,
             self.btn_senha171,
+            self.btn_users,
             self.btn_config,
         )
 
@@ -148,6 +152,7 @@ class DashboardWindow(QMainWindow):
             self.btn_senha: "lock-167.png",
             self.btn_sindicancia: "shield.png",
             self.btn_senha171: "lock-171.png",
+            self.btn_users: "users.png",
             self.btn_config: "settings.png",
         }
 
@@ -155,15 +160,7 @@ class DashboardWindow(QMainWindow):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, i=idx: self._switch_page(i))
-            if btn not in (
-                self.btn_principal,
-                self.btn_estoque,
-                self.btn_relatorios,
-                self.btn_solicitacoes,
-                self.btn_senha,
-                self.btn_senha171,
-                self.btn_config,
-            ):
+            if (btn is self.btn_users or btn is self.btn_solicitacoes) and not self.is_admin:
                 btn.setEnabled(False)
             icon_name = icon_map.get(btn)
             icon = self._load_icon(icon_name) if icon_name else None
@@ -231,6 +228,7 @@ class DashboardWindow(QMainWindow):
         self.stack.addWidget(self._build_password167_page())
         self.stack.addWidget(self._build_placeholder_page("Sindicância (em breve)"))
         self.stack.addWidget(self._build_password171_page())
+        self.stack.addWidget(self._build_users_page())
         self.stack.addWidget(self._build_settings_page())
 
         v.addWidget(self.stack, 1)
@@ -445,7 +443,7 @@ class DashboardWindow(QMainWindow):
             title_row.addWidget(title_lbl)
             title_row.addStretch(1)
 
-            if pop.get("id") is not None:
+            if pop.get("id") is not None and self.is_admin:
                 delete_btn = QPushButton()
                 delete_btn.setFixedSize(32, 32)
                 delete_btn.setObjectName("deleteIconButton")
@@ -606,6 +604,9 @@ class DashboardWindow(QMainWindow):
             progress.close()
 
     def _handle_delete_pop(self, pop_id: int) -> None:
+        if not self.is_admin:
+            QMessageBox.warning(self, "POP", "Apenas administradores podem excluir POPs.")
+            return
         confirm = QMessageBox.question(
             self,
             "Excluir POP",
@@ -704,7 +705,7 @@ class DashboardWindow(QMainWindow):
             title_row.addWidget(title_lbl)
             title_row.addStretch(1)
 
-            if rep.get("id") is not None and not rep.get("is_order"):
+            if rep.get("id") is not None and not rep.get("is_order") and self.is_admin:
                 delete_btn = QPushButton()
                 delete_btn.setFixedSize(32, 32)
                 delete_btn.setObjectName("deleteIconButton")
@@ -896,6 +897,9 @@ class DashboardWindow(QMainWindow):
             QMessageBox.critical(self, "Relatórios", f"Erro ao exportar ordens: {exc}")
 
     def _handle_delete_report(self, report_id: int) -> None:
+        if not self.is_admin:
+            QMessageBox.warning(self, "Relatórios", "Apenas administradores podem excluir relatórios.")
+            return
         confirm = QMessageBox.question(
             self,
             "Excluir relatório",
@@ -1094,6 +1098,67 @@ class DashboardWindow(QMainWindow):
         layout.addLayout(actions_row)
 
         self._load_requests()
+        return page
+
+    def _build_users_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(12)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+
+        header = QLabel("Usuários")
+        header.setObjectName("pageTitle")
+        header_row.addWidget(header, 1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(6)
+        actions.addStretch(1)
+        self.btn_refresh_users = QPushButton("Atualizar lista")
+        self.btn_refresh_users.setObjectName("primaryButton")
+        self.btn_refresh_users.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_refresh_users.clicked.connect(self._load_users)
+        actions.addWidget(self.btn_refresh_users, 0)
+
+        self.btn_toggle_role = QPushButton("Alternar perfil (Usuário/Admin)")
+        self.btn_toggle_role.setObjectName("secondaryButton")
+        self.btn_toggle_role.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_role.clicked.connect(self._toggle_user_role)
+        actions.addWidget(self.btn_toggle_role, 0)
+
+        header_row.addLayout(actions, 0)
+        layout.addLayout(header_row)
+
+        if not self.is_admin:
+            warning = QLabel("Acesso restrito a administradores.")
+            warning.setObjectName("mutedText")
+            layout.addWidget(warning)
+            layout.addStretch(1)
+            return page
+
+        subtitle = QLabel("Gerencie perfis, acessos e últimas movimentações.")
+        subtitle.setObjectName("mutedText")
+        layout.addWidget(subtitle)
+
+        self.table_users = QTableWidget()
+        self.table_users.setObjectName("usersTable")
+        self.table_users.setColumnCount(6)
+        self.table_users.setHorizontalHeaderLabels(
+            ["ID", "Nome", "E-mail", "Perfil", "Acessos", "Último movimento"]
+        )
+        header_view = self.table_users.horizontalHeader()
+        header_view.setStretchLastSection(True)
+        header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_users.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table_users.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table_users.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_users.hideColumn(0)
+        layout.addWidget(self.table_users)
+
+        layout.addStretch(1)
+        self._load_users()
         return page
 
     def _build_password167_page(self) -> QWidget:
@@ -1576,6 +1641,76 @@ class DashboardWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Senha 171", f"Erro ao salvar a prévia: {exc}")
 
+    def _load_users(self) -> None:
+        if not getattr(self, "is_admin", False):
+            return
+        if not hasattr(self, "table_users"):
+            return
+        table = self.table_users
+        table.setSortingEnabled(False)
+        table.clearContents()
+        table.setRowCount(0)
+        try:
+            with Session(engine) as session:
+                users = user_repository.list_all(session)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Usuários", f"Erro ao carregar usuários: {exc}")
+            table.setRowCount(0)
+            table.setSortingEnabled(True)
+            return
+
+        table.setRowCount(len(users))
+        for row_idx, user in enumerate(users):
+            row = [
+                str(user.id or ""),
+                user.name,
+                user.email,
+                user.role or "USUARIO",
+                str(user.access_count or 0),
+                user.last_access_at.strftime("%d/%m/%Y %H:%M") if user.last_access_at else "-",
+            ]
+            for col_idx, value in enumerate(row):
+                item = QTableWidgetItem(value)
+                if col_idx == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, user.id)
+                table.setItem(row_idx, col_idx, item)
+        table.setSortingEnabled(True)
+
+    def _toggle_user_role(self) -> None:
+        if not getattr(self, "is_admin", False):
+            QMessageBox.warning(self, "Usuários", "Apenas administradores podem alterar perfis.")
+            return
+        if not hasattr(self, "table_users"):
+            return
+        row = self.table_users.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Usuários", "Selecione um usuário para alterar o perfil.")
+            return
+        id_item = self.table_users.item(row, 0)
+        role_item = self.table_users.item(row, 3)
+        if id_item is None or role_item is None:
+            return
+        user_id = id_item.data(Qt.ItemDataRole.UserRole)
+        if user_id is None:
+            return
+        current_role = (role_item.text() or "USUARIO").upper()
+        new_role = "USUARIO" if current_role == "ADMINISTRADOR" else "ADMINISTRADOR"
+
+        try:
+            with Session(engine) as session:
+                updated = user_repository.set_role(session, user_id, new_role)
+            if updated is None:
+                QMessageBox.warning(self, "Usuários", "Usuário não encontrado.")
+                return
+            self._load_users()
+            QMessageBox.information(
+                self,
+                "Usuários",
+                f"Perfil alterado para {new_role} para {updated.name}.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Usuários", f"Erro ao alterar perfil: {exc}")
+
     def _set_orders171_confirm_state(self, pending: bool) -> None:
         self._orders171_pending_confirm = pending
         if pending:
@@ -1651,6 +1786,9 @@ class DashboardWindow(QMainWindow):
         return page
 
     def _switch_page(self, index: int) -> None:
+        if not self.is_admin and index in (3, 7):
+            QMessageBox.warning(self, "Acesso restrito", "Apenas administradores podem acessar esta área.")
+            return
         self.btn_principal.setChecked(index == 0)
         self.btn_estoque.setChecked(index == 1)
         self.btn_relatorios.setChecked(index == 2)
@@ -1658,7 +1796,8 @@ class DashboardWindow(QMainWindow):
         self.btn_senha.setChecked(index == 4)
         self.btn_sindicancia.setChecked(index == 5)
         self.btn_senha171.setChecked(index == 6)
-        self.btn_config.setChecked(index == 7)
+        self.btn_users.setChecked(index == 7)
+        self.btn_config.setChecked(index == 8)
         self.stack.setCurrentIndex(index)
 
     def _clear_pw_errors(self) -> None:

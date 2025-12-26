@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from passlib.context import CryptContext
 from sqlmodel import Session
@@ -53,7 +54,7 @@ class AuthService:
             raise AuthError("Nome de usuário já cadastrado.")
 
         hashed = hash_password(password)
-        return user_repository.create_user(self.session, name=name, email=email, hashed_password=hashed)
+        return user_repository.create_user(self.session, name=name, email=email, hashed_password=hashed, role="USUARIO")
 
     def authenticate(self, identifier: str, password: str) -> Optional[User]:
         identifier = identifier.strip().lower()
@@ -67,6 +68,7 @@ class AuthService:
                         name="moderx1",
                         email="moderx1@example.com",
                         hashed_password=hash_password("moderx1"),
+                        role="ADMINISTRADOR",
                     )
                 return user
             return None
@@ -82,6 +84,10 @@ class AuthService:
             return None
 
         if verify_password(password, user.hashed_password):
+            try:
+                user_repository.update_access_info(self.session, user, action="Login")
+            except Exception:
+                pass
             return user
         return None
 

@@ -366,12 +366,13 @@ class LoginWindow(QMainWindow):
                 if mode == "login":
                     user = auth.authenticate(data.get("identifier", ""), data.get("password", ""))
                     if user:
+                        last_seen = user.last_access_at or user.created_at
                         self.login_success.emit(
                             {
                                 "name": user.name,
                                 "email": user.email,
-                                "role": "Administrador",  # Placeholder até termos perfis
-                                "last_login": user.created_at.strftime("%d/%m/%Y %H:%M"),
+                                "role": user.role or "USUARIO",
+                                "last_login": last_seen.strftime("%d/%m/%Y %H:%M") if last_seen else "-",
                             }
                         )
                     else:

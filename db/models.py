@@ -16,6 +16,10 @@ class User(SQLModel, table=True):
     name: str = Field(index=True, nullable=False, max_length=120)
     email: str = Field(index=True, nullable=False, max_length=255)
     hashed_password: str = Field(nullable=False, max_length=255)
+    role: str = Field(default="USUARIO", nullable=False, max_length=32)
+    access_count: int = Field(default=0, nullable=False)
+    last_access_at: datetime | None = Field(default=None, nullable=True)
+    last_action: str | None = Field(default=None, nullable=True, max_length=255)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
