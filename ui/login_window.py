@@ -369,10 +369,16 @@ class LoginWindow(QMainWindow):
                         last_seen = user.last_access_at or user.created_at
                         self.login_success.emit(
                             {
+                                "id": user.id,
                                 "name": user.name,
                                 "email": user.email,
                                 "role": user.role or "USUARIO",
                                 "last_login": last_seen.strftime("%d/%m/%Y %H:%M") if last_seen else "-",
+                                "alert_message": user.alert_message,
+                                "alert_priority": user.alert_priority,
+                                "alert_sender": user.alert_sender,
+                                "alert_created_at": user.alert_created_at.isoformat() if user.alert_created_at else None,
+                                "alert_ack_at": user.alert_ack_at.isoformat() if user.alert_ack_at else None,
                             }
                         )
                     else:

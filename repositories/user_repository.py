@@ -49,3 +49,54 @@ def update_access_info(session: Session, user: User, *, action: str | None = Non
     session.commit()
     session.refresh(user)
     return user
+
+
+def delete_user(session: Session, user_id: int) -> bool:
+    user = session.get(User, user_id)
+    if user is None:
+        return False
+    session.delete(user)
+    session.commit()
+    return True
+
+
+def set_alert(
+    session: Session,
+    user_id: int,
+    *,
+    message: str | None,
+    priority: str | None,
+    sender: str | None,
+) -> Optional[User]:
+    user = session.get(User, user_id)
+    if user is None:
+        return None
+    user.alert_message = message if message else None
+    user.alert_priority = priority if priority else None
+    user.alert_sender = sender if sender else None
+    from datetime import datetime
+
+    user.alert_created_at = datetime.utcnow() if message and priority else None
+    user.alert_ack_at = None  # reset acknowledgment on new message
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def ack_alert(session: Session, user_id: int) -> Optional[User]:
+    user = session.get(User, user_id)
+    if user is None:
+        return None
+    from datetime import datetime
+
+    now = datetime.utcnow()
+    user.alert_ack_at = now
+    user.alert_message = None
+    user.alert_priority = None
+    user.alert_sender = None
+    user.alert_created_at = None
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user

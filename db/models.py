@@ -20,6 +20,11 @@ class User(SQLModel, table=True):
     access_count: int = Field(default=0, nullable=False)
     last_access_at: datetime | None = Field(default=None, nullable=True)
     last_action: str | None = Field(default=None, nullable=True, max_length=255)
+    alert_message: str | None = Field(default=None, nullable=True, max_length=1000)
+    alert_priority: str | None = Field(default=None, nullable=True, max_length=32)
+    alert_sender: str | None = Field(default=None, nullable=True, max_length=120)
+    alert_created_at: datetime | None = Field(default=None, nullable=True)
+    alert_ack_at: datetime | None = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 

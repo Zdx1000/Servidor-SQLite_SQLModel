@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -13,7 +14,13 @@ from .order_models import (
     Order171,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+def _base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = _base_dir()
 ORDER_REQUEST_DB_PATH = BASE_DIR / "data" / "order_requests.db"
 ORDER_DATA_DB_PATH = BASE_DIR / "data" / "orders.db"
 

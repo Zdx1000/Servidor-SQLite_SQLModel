@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from sqlmodel import SQLModel, create_engine
 
 from db.report_models import ReportRequest
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+def _base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = _base_dir()
 REPORT_DB_PATH = BASE_DIR / "data" / "reports.db"
 REPORT_DATABASE_URL = f"sqlite:///{REPORT_DB_PATH}"
 

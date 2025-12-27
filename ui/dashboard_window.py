@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict
+import html
 from datetime import datetime
 import shutil
 from zoneinfo import ZoneInfo
@@ -37,6 +38,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QAbstractItemView,
+    QComboBox,
 )
 
 from sqlmodel import Session
@@ -81,6 +83,7 @@ class DashboardWindow(QMainWindow):
         if app_icon is not None:
             self.setWindowIcon(app_icon)
         self._build_ui()
+        self._show_user_alert()
 
     def _build_ui(self) -> None:
         container = QWidget()
@@ -1122,12 +1125,6 @@ class DashboardWindow(QMainWindow):
         self.btn_refresh_users.clicked.connect(self._load_users)
         actions.addWidget(self.btn_refresh_users, 0)
 
-        self.btn_toggle_role = QPushButton("Alternar perfil (Usuário/Admin)")
-        self.btn_toggle_role.setObjectName("secondaryButton")
-        self.btn_toggle_role.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_role.clicked.connect(self._toggle_user_role)
-        actions.addWidget(self.btn_toggle_role, 0)
-
         header_row.addLayout(actions, 0)
         layout.addLayout(header_row)
 
@@ -1144,13 +1141,15 @@ class DashboardWindow(QMainWindow):
 
         self.table_users = QTableWidget()
         self.table_users.setObjectName("usersTable")
-        self.table_users.setColumnCount(6)
+        self.table_users.setColumnCount(8)
         self.table_users.setHorizontalHeaderLabels(
-            ["ID", "Nome", "E-mail", "Perfil", "Acessos", "Último movimento"]
+            ["ID", "Nome", "E-mail", "Perfil", "Acessos", "Último movimento", "Mensagem", "Excluir"]
         )
         header_view = self.table_users.horizontalHeader()
-        header_view.setStretchLastSection(True)
+        header_view.setStretchLastSection(False)
         header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        header_view.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
         self.table_users.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_users.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table_users.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -1661,55 +1660,200 @@ class DashboardWindow(QMainWindow):
 
         table.setRowCount(len(users))
         for row_idx, user in enumerate(users):
-            row = [
-                str(user.id or ""),
-                user.name,
-                user.email,
-                user.role or "USUARIO",
-                str(user.access_count or 0),
-                user.last_access_at.strftime("%d/%m/%Y %H:%M") if user.last_access_at else "-",
-            ]
-            for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(value)
-                if col_idx == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, user.id)
-                table.setItem(row_idx, col_idx, item)
-        table.setSortingEnabled(True)
+            # ID (hidden)
+            id_item = QTableWidgetItem(str(user.id or ""))
+            id_item.setData(Qt.ItemDataRole.UserRole, user.id)
+            table.setItem(row_idx, 0, id_item)
 
-    def _toggle_user_role(self) -> None:
+            table.setItem(row_idx, 1, QTableWidgetItem(user.name))
+            table.setItem(row_idx, 2, QTableWidgetItem(user.email))
+
+            # Perfil drop-down
+            combo = QComboBox()
+            combo.addItems(["USUARIO", "ADMINISTRADOR"])
+            current_role = (user.role or "USUARIO").upper()
+            combo.blockSignals(True)
+            idx = combo.findText(current_role)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+            combo.currentIndexChanged.connect(lambda _, uid=user.id, cb=combo: self._on_role_changed(uid, cb))
+            table.setCellWidget(row_idx, 3, combo)
+
+            table.setItem(row_idx, 4, QTableWidgetItem(str(user.access_count or 0)))
+            last_access = user.last_access_at.strftime("%d/%m/%Y %H:%M") if user.last_access_at else "-"
+            table.setItem(row_idx, 5, QTableWidgetItem(last_access))
+
+            # Mensagem / alerta
+            msg_btn = QPushButton("Mensagem")
+            msg_btn.setObjectName("secondaryButton")
+            msg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            msg_btn.setFixedHeight(26)
+            msg_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            msg_btn.setStyleSheet("padding: 2px 6px; text-align: center;")
+            summary = user.alert_message or "Nenhuma mensagem"
+            priority = (user.alert_priority or "-").upper()
+            sender = user.alert_sender or "-"
+            ts = user.alert_created_at.strftime("%d/%m/%Y %H:%M") if user.alert_created_at else "-"
+            msg_btn.setToolTip(f"Prioridade: {priority}\nDe: {sender}\nQuando: {ts}\n\n{summary}")
+
+            # Color hint by priority
+            color_map = {
+                "CRITICA": "#b91c1c",
+                "ALTA": "#e11d48",
+                "MEDIA": "#f59e0b",
+                "BAIXA": "#0ea5e9",
+            }
+            pri_color = color_map.get(priority)
+            if pri_color:
+                msg_btn.setStyleSheet(
+                    f"background-color: {pri_color}; color: white; padding: 2px 6px; text-align: center;"
+                )
+            msg_btn.clicked.connect(
+                lambda _, uid=user.id, uname=user.name, cur_msg=user.alert_message, cur_pri=priority: self._edit_user_alert(uid, uname, cur_msg, cur_pri)
+            )
+            table.setCellWidget(row_idx, 6, msg_btn)
+
+            # Delete button
+            del_btn = QPushButton("Excluir")
+            del_btn.setObjectName("rejectButton")
+            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            del_btn.setFixedHeight(26)
+            del_btn.setMinimumWidth(70)
+            del_btn.setMaximumWidth(90)
+            del_btn.setStyleSheet("padding: 2px 6px;")
+            del_btn.clicked.connect(lambda _, uid=user.id, uname=user.name: self._handle_delete_user(uid, uname))
+            table.setCellWidget(row_idx, 7, del_btn)
+        table.setSortingEnabled(True)
+        table.resizeColumnsToContents()
+        table.setColumnWidth(7, 90)
+
+    def _on_role_changed(self, user_id: int | None, combo: QComboBox) -> None:
         if not getattr(self, "is_admin", False):
             QMessageBox.warning(self, "Usuários", "Apenas administradores podem alterar perfis.")
             return
-        if not hasattr(self, "table_users"):
-            return
-        row = self.table_users.currentRow()
-        if row < 0:
-            QMessageBox.information(self, "Usuários", "Selecione um usuário para alterar o perfil.")
-            return
-        id_item = self.table_users.item(row, 0)
-        role_item = self.table_users.item(row, 3)
-        if id_item is None or role_item is None:
-            return
-        user_id = id_item.data(Qt.ItemDataRole.UserRole)
         if user_id is None:
             return
-        current_role = (role_item.text() or "USUARIO").upper()
-        new_role = "USUARIO" if current_role == "ADMINISTRADOR" else "ADMINISTRADOR"
-
+        new_role = combo.currentText().strip().upper()
         try:
             with Session(engine) as session:
                 updated = user_repository.set_role(session, user_id, new_role)
             if updated is None:
                 QMessageBox.warning(self, "Usuários", "Usuário não encontrado.")
                 return
+            QMessageBox.information(self, "Usuários", f"Perfil atualizado para {new_role}.")
             self._load_users()
-            QMessageBox.information(
-                self,
-                "Usuários",
-                f"Perfil alterado para {new_role} para {updated.name}.",
-            )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Usuários", f"Erro ao alterar perfil: {exc}")
+
+    def _ack_user_alert(self) -> None:
+        user_id = self.user_info.get("id") or self.user_info.get("user_id")
+        if user_id is None:
+            return
+        try:
+            with Session(engine) as session:
+                user_repository.ack_alert(session, user_id)
+            now_iso = datetime.utcnow().isoformat()
+            self.user_info["alert_ack_at"] = now_iso
+            self.user_info["alert_message"] = None
+            self.user_info["alert_priority"] = None
+            self.user_info["alert_sender"] = None
+            self.user_info["alert_created_at"] = None
+        except Exception:
+            pass
+
+    def _edit_user_alert(self, user_id: int | None, name: str, current_msg: str | None, current_priority: str | None) -> None:
+        if not getattr(self, "is_admin", False):
+            QMessageBox.warning(self, "Usuários", "Apenas administradores podem definir mensagens.")
+            return
+        if user_id is None:
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Mensagem para {name}")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        info = QLabel("Defina o texto e a prioridade. Deixe vazio para remover a mensagem.")
+        info.setObjectName("mutedText")
+        layout.addWidget(info)
+
+        msg_edit = QTextEdit()
+        msg_edit.setPlaceholderText("Digite a mensagem a exibir no login do colaborador")
+        if current_msg:
+            msg_edit.setText(current_msg)
+        layout.addWidget(msg_edit)
+
+        pri_combo = QComboBox()
+        pri_combo.addItems(["BAIXA", "MEDIA", "ALTA", "CRITICA"])
+        cur_pri = (current_priority or "").upper()
+        idx = pri_combo.findText(cur_pri)
+        pri_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        layout.addWidget(pri_combo)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_btn:
+            ok_btn.setText("Salvar")
+            ok_btn.setObjectName("primaryButton")
+            ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if cancel_btn:
+            cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_msg = msg_edit.toPlainText().strip()
+        new_pri = pri_combo.currentText().strip().upper()
+        if not new_msg:
+            new_pri = None
+
+        try:
+            with Session(engine) as session:
+                updated = user_repository.set_alert(
+                    session,
+                    user_id,
+                    message=new_msg if new_msg else None,
+                    priority=new_pri,
+                    sender=self.user_info.get("name", "-"),
+                )
+            if updated is None:
+                QMessageBox.warning(self, "Usuários", "Usuário não encontrado.")
+                return
+            QMessageBox.information(self, "Usuários", "Mensagem atualizada.")
+            self._load_users()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Usuários", f"Erro ao salvar mensagem: {exc}")
+
+    def _handle_delete_user(self, user_id: int | None, name: str) -> None:
+        if not getattr(self, "is_admin", False):
+            QMessageBox.warning(self, "Usuários", "Apenas administradores podem excluir usuários.")
+            return
+        if user_id is None:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Excluir usuário",
+            f"Excluir definitivamente o usuário {name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            with Session(engine) as session:
+                removed = user_repository.delete_user(session, user_id)
+            if not removed:
+                QMessageBox.warning(self, "Usuários", "Usuário não encontrado.")
+                return
+            QMessageBox.information(self, "Usuários", "Usuário excluído com sucesso.")
+            self._load_users()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Usuários", f"Erro ao excluir usuário: {exc}")
 
     def _set_orders171_confirm_state(self, pending: bool) -> None:
         self._orders171_pending_confirm = pending
@@ -1731,6 +1875,69 @@ class DashboardWindow(QMainWindow):
         style.unpolish(widget)
         style.polish(widget)
         widget.update()
+
+    def _show_user_alert(self) -> None:
+        msg = (self.user_info.get("alert_message") or "").strip()
+        if not msg:
+            return
+        if self.user_info.get("alert_ack_at"):
+            return
+        pri = (self.user_info.get("alert_priority") or "").upper() or "BAIXA"
+        sender = self.user_info.get("alert_sender") or "-"
+        ts_raw = self.user_info.get("alert_created_at")
+        ts_display = "-"
+        if ts_raw:
+            try:
+                ts_display = datetime.fromisoformat(ts_raw).strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                ts_display = str(ts_raw)
+
+        icon = QMessageBox.Icon.Information
+        if pri == "CRITICA":
+            icon = QMessageBox.Icon.Critical
+        elif pri == "ALTA":
+            icon = QMessageBox.Icon.Warning
+        elif pri == "MEDIA":
+            icon = QMessageBox.Icon.Warning
+
+        # Visual detalhado com badge de prioridade, remetente, data e bloco de mensagem
+        color_map = {
+            "CRITICA": "#b91c1c",
+            "ALTA": "#e11d48",
+            "MEDIA": "#f59e0b",
+            "BAIXA": "#0ea5e9",
+        }
+        pri_color = color_map.get(pri, "#0ea5e9")
+        msg_html = html.escape(msg).replace("\n", "<br>")
+        sender_html = html.escape(sender)
+        ts_html = html.escape(ts_display)
+
+        text = (
+            f"<div style='font-family: Segoe UI, Arial; font-size:13px; line-height:1.45;'>"
+            f"<div style='margin-bottom:8px; display:flex; align-items:center; gap:8px;'>"
+            f"<span style='display:inline-block; padding:4px 10px; border-radius:999px; background:{pri_color}; color:#fff; font-weight:600; letter-spacing:0.3px;'>{pri}</span>"
+            f"<span style='color:#555;'>Enviado por <b>{sender_html}</b> em {ts_html}</span>"
+            f"</div>"
+            f"<div style='background:#f6f7fb; border:1px solid #e5e7eb; border-radius:10px; padding:10px;'>"
+            f"{msg_html}"
+            f"</div>"
+            f"</div>"
+        )
+
+        mb = QMessageBox(icon, "Alerta", "")
+        mb.setTextFormat(Qt.TextFormat.RichText)
+        mb.setText(text)
+        mb.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Yes)
+        mb.setDefaultButton(QMessageBox.StandardButton.Yes)
+        yes_btn = mb.button(QMessageBox.StandardButton.Yes)
+        ok_btn = mb.button(QMessageBox.StandardButton.Ok)
+        if yes_btn:
+            yes_btn.setText("Marcar como lida")
+        if ok_btn:
+            ok_btn.setText("Fechar")
+        result = mb.exec()
+        if result == QMessageBox.StandardButton.Yes:
+            self._ack_user_alert()
 
     def _build_settings_page(self) -> QWidget:
         page = QWidget()

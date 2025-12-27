@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Generator
 
 from sqlmodel import SQLModel, create_engine, Session
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+def _base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = _base_dir()
 DB_PATH = BASE_DIR / "data" / "app.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
